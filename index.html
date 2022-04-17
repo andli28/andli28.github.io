@@ -1,7 +1,12 @@
+---
+title: Andrew Li
+---
+<!-- front matter tells Jekyll to process Liquid--> 
+
 <!DOCTYPE html>
 <html> 
 <head> 
-    <title>Andrew Li</title> 
+    <title>{{ page.title }}</title> 
     <link href="stylesheet.css" rel="stylesheet" type="text/css" />
     <style type="text/css">
         h1.fronttitle { text-align: center; margin: auto; }
@@ -18,7 +23,7 @@
     </style>
 </head>
 <body> 
-    <h1 class="fronttitle"><a class="hilite" href="">Andrew Li</a></h1>	
+    <h1 class="fronttitle"><a class="hilite" href="">{{ page.title }}</a></h1>	
     <p class="byline" style="margin: 0"><a href="/weblog">weblog</a> &middot; <a href="https://www.linkedin.com/in/andli28/">linkedin</a> &middot; <a href="https://github.com/andli28">github</a> </p>
 
     <div class="body">
