@@ -1,0 +1,22 @@
+<nav>
+<p class="byline" style="margin: 0">
+    
+    {% for item in site.data.navigation %}
+        <a href="{{ item.link }}" >
+            {% if forloop.first %}
+
+            {% else %}                
+                &middot;
+            {% endif %} <!--only inserts middot in between nav links-->
+
+            {{ item.name }} 
+        </a>
+    {% endfor %}
+    
+    
+    <!-- <a href="/weblog">weblog</a> &middot; 
+    <a href="https://www.linkedin.com/in/andli28/">linkedin</a> &middot; 
+    <a href="https://github.com/andli28">github</a>  -->
+   
+</p>
+</nav>

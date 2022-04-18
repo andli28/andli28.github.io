@@ -7,7 +7,8 @@ title: Andrew Li
 <html> 
 <head> 
     <title>{{ page.title }}</title> 
-    <link href="stylesheet.css" rel="stylesheet" type="text/css" />
+    <!-- <link href="stylesheet.css" rel="stylesheet" type="text/css" /> -->
+    <link href="/assets/css/styles.css" rel="stylesheet" type="text/css" />
     <style type="text/css">
         h1.fronttitle { text-align: center; margin: auto; }
         .byline { text-align: center }
@@ -24,12 +25,12 @@ title: Andrew Li
 </head>
 <body> 
     <h1 class="fronttitle"><a class="hilite" href="">{{ page.title }}</a></h1>	
-    <p class="byline" style="margin: 0"><a href="/weblog">weblog</a> &middot; <a href="https://www.linkedin.com/in/andli28/">linkedin</a> &middot; <a href="https://github.com/andli28">github</a> </p>
+    {% include navigation.html %}
 
     <div class="body">
         <p>Hi, I'm Andrew 👋, a Computer Science & Statistics student at <strong>the University of Michigan</strong>. <!--My online alias is <strong>andli28</strong>. --> <br><br>
             I enjoy playing 🎹 and listening to music, swimming, playing racquet sports, watching movies and shows, learning new activities and skills, and keeping a <a href="/weblog">weblog</a> for introspection.<br><br>
-            On a more technical/professional side, I'm currently interested in all things Machine Learning<br><br>
+            On a more technical/professional side, I'm currently interested in all things Machine Learning.<br><br>
             This website is a work in progress, so mind the mess.</p>
         <address class="byline" style="margin: 0"><p><a href="mailto:achyt28@gmail.com">achyt28@gmail.com</a><br>
     </div>

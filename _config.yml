@@ -1,0 +1,9 @@
+defaults:
+  - scope:
+      path: ""
+      type: "posts"
+    values:
+      layout: "weblogs"
+
+plugins:
+  - jekyll-feed

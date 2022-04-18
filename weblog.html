@@ -1,8 +1,12 @@
+---
+---
+
 <!DOCTYPE html>
 <html>
 <head>
     <title>Scatterbrain</title>
-    <link href="stylesheet.css" rel="stylesheet" type="text/css" />
+    <!-- <link href="stylesheet.css" rel="stylesheet" type="text/css" /> -->
+    <link href="/assets/css/styles.css" rel="stylesheet" type="text/css" />
     <style>
         span.option:before { content: "(\000064\00006f\00006e\00006f\000072)"; color: #bba; }
         .content { margin-top: 2em; margin-left: 4em; }
@@ -20,9 +24,15 @@
 
     <table class="main"><tr>
         <td class="content">
+        
+        {% for post in site.posts %}
+              <h2 class="posttitle"><a rel="bookmark" href="{{ post.url }}">{{ post.title }}</a></h2>
+              <p><em>{{ post.date | date: "%m/%d/%y" }}</em></p>
+
+        {% endfor %}
             
-        <h2 class="posttitle"><a rel="bookmark" href="weblog/firstpost">First Post</a></h2>
-        <p><em>4/17/22</em></p>
+        <!-- <h2 class="posttitle"><a rel="bookmark" href="weblog/firstpost">First Post</a></h2>
+        <p><em>4/17/22</em></p> -->
 
         </td>
         </tr>
