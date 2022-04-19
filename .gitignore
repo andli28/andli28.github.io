@@ -6,4 +6,4 @@ _site/
 .bundle/
 vendor/
 
-google-chrome-unstable_current_x64.deb
+*.deb
