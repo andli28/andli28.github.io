@@ -11,5 +11,9 @@
     "lib": ["ESNext", "DOM"],
     "types": []
   },
-  "include": ["docs/.vitepress/**/*.ts", "docs/.vitepress/**/*.vue"]
+  "include": [
+    "docs/.vitepress/**/*.ts",
+    "docs/.vitepress/**/*.vue",
+    "docs/**/*.data.ts"
+  ]
 }

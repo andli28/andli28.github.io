@@ -1,11 +1,16 @@
+---
+title: Andrew Li
+outline: false
+---
+
 # Andrew Li
 
-Notes on machine learning and systems.
+Hi, I'm Andrew 👋, a Computer Science & Statistics student at the University of Michigan.
 
-A policy gradient step:
+I enjoy playing 🎹 and listening to music, swimming, playing racquet sports, watching movies and shows, learning new activities and skills, and keeping a [blog](/blog/) for introspection.
 
-$$
-\nabla_\theta J(\theta) = \mathbb{E}\big[\nabla_\theta \log \pi_\theta(a \mid s) \, A(s, a)\big]
-$$
+On a more technical side, I'm interested in machine learning.
 
-The logistic function is $\sigma(z) = (1 + e^{-z})^{-1}$.
+This website is a work in progress.
+
+[achyt28@gmail.com](mailto:achyt28@gmail.com)
