@@ -6,6 +6,7 @@ export default defineConfig({
   description:
     'Computer Science and Statistics student at the University of Michigan.',
   themeConfig: {
+    outline: false,
     nav: [
       { text: 'Blog', link: '/blog/', activeMatch: '/blog/' },
       {
