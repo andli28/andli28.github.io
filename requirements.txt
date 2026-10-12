@@ -1,4 +1,0 @@
-requests
-pytest
-selenium
-webdriver_manager
