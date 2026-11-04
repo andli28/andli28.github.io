@@ -1,0 +1,26 @@
+---
+/**
+ * Lets a figure or widget break out of the narrow reading column.
+ *
+ * Usage in an .mdx post:
+ *   import Wide from "@/components/Wide.astro";
+ *   <Wide>...anything...</Wide>
+ *   <Wide width={1200}>...</Wide>
+ */
+type Props = { width?: number };
+const { width = 1040 } = Astro.props;
+---
+
+<div class="wide not-prose" style={`--wide-max: ${width}px`}>
+  <slot />
+</div>
+
+<style>
+  .wide {
+    position: relative;
+    left: 50%;
+    width: min(var(--wide-max), calc(100vw - 2rem));
+    transform: translateX(-50%);
+    margin-block: 2rem;
+  }
+</style>

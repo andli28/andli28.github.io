@@ -1,0 +1,73 @@
+---
+title: "Example post: every feature in one place"
+description: "A reference post showing math, callouts, code, images and an embedded widget. It's a draft, so it only shows up in local preview."
+pubDatetime: 2026-11-03T12:00:00-05:00
+draft: true
+tags:
+  - example
+---
+
+import IterativeBatching from "@/components/widgets/IterativeBatching.astro";
+import Wide from "@/components/Wide.astro";
+
+This post is a cheat sheet. It has `draft: true`, so it appears when you run `pnpm dev` but never on the live site. Copy whatever you need from it.
+
+## Table of contents
+
+## Math
+
+Inline math goes between single dollar signs: under serial scheduling the fourth client waits $4P + 3D$ for its first token, where $P$ is prefill time and $D$ is decode time.
+
+Block math goes between `$$` lines:
+
+$$
+\text{TTFT}_k^{\text{serial}} = kP + (k-1)D, \qquad \text{TTFT}_k^{\text{batched}} \approx kP
+$$
+
+$$
+\begin{aligned}
+\text{throughput} &= \frac{\text{tokens generated}}{\text{wall-clock time}} \\
+&\approx \frac{B}{S_1\left(1 + (m - 1)\frac{B - 1}{3}\right)}
+\end{aligned}
+$$
+
+## Callouts
+
+> [!NOTE]
+> Use a callout for an aside the reader can skip.
+
+> [!TIP]- Click to expand
+> Add `-` after the type to make it collapsed by default.
+
+## Code
+
+```python file=iteration_batching.py
+while waiting or active:
+    while waiting and len(active) < max_batch:
+        manual_prefill(waiting.pop(0))  # [!code highlight]
+    batched_decode_step(model, dims, active)
+    active = [r for r in active if not r.done]
+```
+
+## An interactive widget
+
+Import a component at the top of an `.mdx` file, then use it anywhere in the text. This one breaks out of the reading column to use the full width:
+
+<IterativeBatching />
+
+## Any wide figure
+
+Wrap anything in `<Wide>` to give it more room than the text column:
+
+<Wide>
+
+| Policy | Median TTFT | Worst TBT | Throughput |
+| ------ | ----------- | --------- | ---------- |
+| Serial (`max_batch = 1`) | slow | low | low |
+| Iteration-level (`max_batch = 4`) | fast | higher (prefill stalls) | high |
+
+</Wide>
+
+## Images
+
+Put images in `src/assets/images/` and reference them with a relative or `@/` path, e.g. `![Alt text](@/assets/images/diagram.png)`. Astro optimizes them at build time.
