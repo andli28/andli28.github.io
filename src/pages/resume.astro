@@ -1,0 +1,63 @@
+---
+/**
+ * Resume page. To update the resume, replace public/resume.pdf
+ * (keep the file name) and push.
+ */
+import Layout from "@/layouts/Layout.astro";
+import Header from "@/components/Header.astro";
+import Breadcrumb from "@/components/Breadcrumb.astro";
+import Main from "@/components/Main.astro";
+import Footer from "@/components/Footer.astro";
+import { getAssetPath } from "@/utils/withBase";
+import config from "@/config";
+
+const pdf = getAssetPath("resume.pdf");
+---
+
+<Layout
+  title={`Resume | ${config.site.title}`}
+  description={`Resume of ${config.site.author}.`}
+>
+  <Header />
+
+  <Breadcrumb />
+
+  <Main pageTitle="Resume">
+    <div class="mb-6 flex flex-wrap gap-3">
+      <a
+        href={pdf}
+        download="Andrew_Li_Resume.pdf"
+        class="bg-accent text-accent-foreground rounded px-4 py-2 font-medium hover:opacity-90"
+      >
+        Download PDF
+      </a>
+      <a
+        href={pdf}
+        target="_blank"
+        rel="noopener"
+        class="border-border hover:text-accent rounded border px-4 py-2 font-medium"
+      >
+        Open in new tab
+      </a>
+    </div>
+
+    <object
+      data={`${pdf}#navpanes=0&view=FitH`}
+      type="application/pdf"
+      class="border-border aspect-[8.5/11] w-full rounded border max-sm:hidden"
+      aria-label="Resume PDF"
+    >
+      <p class="p-4">
+        Your browser can't show the PDF here. <a
+          class="underline decoration-dashed underline-offset-4"
+          href={pdf}>Open the resume</a
+        > instead.
+      </p>
+    </object>
+    <p class="text-muted-foreground sm:hidden">
+      Use the buttons above to view the resume on your phone.
+    </p>
+  </Main>
+
+  <Footer />
+</Layout>

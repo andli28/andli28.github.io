@@ -21,6 +21,7 @@ pnpm preview    # serve the built site
 | Retired posts (kept, not published) | `src/content/archives/` |
 | Homepage intro | `src/content/pages/home.md` |
 | About page | `src/content/pages/about.md` |
+| Resume | `public/resume.pdf` (replace the file, keep the name) |
 | Site title, socials, settings | `astro-paper.config.ts` |
 | Colors | `src/styles/theme.css` |
 | Images for posts | `src/assets/images/` |
