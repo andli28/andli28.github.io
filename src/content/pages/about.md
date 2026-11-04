@@ -9,4 +9,4 @@ I enjoy playing 🎹 and listening to music, swimming, playing racquet sports, w
 
 On a more technical/professional side, I'm currently interested in all things Machine Learning.
 
-You can reach me at [achyt28@gmail.com](mailto:achyt28@gmail.com).
+You can reach me at [ayl2159@columbia.edu](mailto:ayl2159@columbia.edu).
