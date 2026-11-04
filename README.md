@@ -18,6 +18,7 @@ pnpm preview    # serve the built site
 | What | Where |
 | --- | --- |
 | Posts | `src/content/posts/` (`.md` or `.mdx`) |
+| Retired posts (kept, not published) | `src/content/archives/` |
 | Homepage intro | `src/content/pages/home.md` |
 | About page | `src/content/pages/about.md` |
 | Site title, socials, settings | `astro-paper.config.ts` |

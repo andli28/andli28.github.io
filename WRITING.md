@@ -108,6 +108,12 @@ pnpm dev     # http://localhost:4321
 
 When it looks right, remove `draft: true`, then commit and push to `main`. The site updates in about a minute.
 
+## Retiring a post
+
+Move the file to `src/content/archives/`. Anything outside `src/content/posts/` isn't part of the site, so the post disappears from Posts, Archives, Tags, RSS and search, but stays in the repo. Move it back to republish it.
+
+(The "Archives" page on the site is just a by-date list of all published posts, not this folder.)
+
 ## Editing other pages
 
 - Homepage intro: `src/content/pages/home.md` (its `title` is the big heading)
