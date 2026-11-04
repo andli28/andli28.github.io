@@ -99,12 +99,13 @@ import Wide from "@/components/Wide.astro";
 </Wide>
 
 <script>
-  // Astro's client-side router swaps pages without a full reload, so mount on
-  // every page load instead of once.
+  // Mount now, and again after each client-side navigation: Astro's router
+  // swaps pages without a full reload. Mounting twice is a no-op.
   import { mountIterativeBatching } from "./iterative-batching.js";
-  document.addEventListener("astro:page-load", () => {
+  const mountAll = () =>
     document.querySelectorAll<HTMLElement>(".ib-root").forEach(mountIterativeBatching);
-  });
+  mountAll();
+  document.addEventListener("astro:page-load", mountAll);
 </script>
 
 <style is:global>
