@@ -1,0 +1,107 @@
+---
+/**
+ * Next-token prediction during pre-training.
+ *
+ * Usage in an .mdx post:
+ *   import PretrainFigure from "@/components/widgets/training/PretrainFigure.astro";
+ *   <PretrainFigure />
+ *
+ * Props: caption (override, "" hides it), animate (false = static, no button).
+ */
+import Frame from "./Frame.astro";
+import ModelBox from "./ModelBox.astro";
+type Props = { caption?: string; animate?: boolean };
+const {
+  caption = "Pre-training: given the tokens so far, predict the next one, compare with the real next token, and nudge the weights. Repeat trillions of times.",
+  animate = true,
+} = Astro.props;
+const m = "tf-arrow-pretrain";
+const arrow = `url(#${m})`;
+const probs = [
+  { t: "mat", p: 0.41, target: true },
+  { t: "floor", p: 0.17 },
+  { t: "couch", p: 0.09 },
+  { t: "roof", p: 0.05 },
+];
+---
+
+<Frame caption={caption} animate={animate}>
+  <svg
+    viewBox="0 0 720 250"
+    role="img"
+    aria-label="The model reads 'The cat sat on the' and predicts a probability for each possible next token"
+  >
+    <defs
+      ><marker
+        id={m}
+        viewBox="0 0 10 10"
+        refX="9"
+        refY="5"
+        markerWidth="7"
+        markerHeight="7"
+        orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"></path></marker
+      ></defs
+    >
+    <text class="lbl small muted" x="16" y="62">context</text>
+    {
+      ["The", "cat", "sat", "on", "the"].map((t, i) => (
+        <g>
+          <rect
+            class="box"
+            x={16 + i * 58}
+            y="76"
+            width="52"
+            height="34"
+            rx="7"
+          />
+          <text class="lbl mono" x={42 + i * 58} y="98" text-anchor="middle">
+            {t}
+          </text>
+        </g>
+      ))
+    }
+    <path class="line" d="M308,93 L346,93" marker-end={arrow}></path>
+    <ModelBox x={352} y={58} w={104} h={70} />
+    <path class="line" d="M460,93 L488,93" marker-end={arrow}></path>
+    <text class="lbl small muted" x="500" y="26">P(next token)</text>
+    {
+      probs.map((r, i) => (
+        <g>
+          <text
+            class:list={["lbl mono", { strong: r.target }]}
+            x="552"
+            y={56 + i * 30}
+            text-anchor="end"
+          >
+            {r.t}
+          </text>
+          <rect
+            class:list={["bar", r.target ? "accent-fill" : "muted-fill"]}
+            x="560"
+            y={42 + i * 30}
+            width={r.p * 280}
+            height="20"
+            rx="4"
+            style={`--i:${i}`}
+          />
+          <text class="lbl small muted" x={566 + r.p * 280} y={57 + i * 30}>
+            {r.p.toFixed(2)}
+          </text>
+        </g>
+      ))
+    }
+    <text class="lbl small accent" x="712" y="178" text-anchor="end"
+      >✓ actual next token: “mat”</text
+    >
+    <path
+      class="flow back"
+      d="M600,190 C600,232 404,232 404,134"
+      marker-end={arrow}></path>
+    <text class="lbl small muted" x="300" y="226" text-anchor="end"
+      >compare, compute loss,</text
+    >
+    <text class="lbl small muted" x="300" y="244" text-anchor="end"
+      >update weights</text
+    >
+  </svg>
+</Frame>

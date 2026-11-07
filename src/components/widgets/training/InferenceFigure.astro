@@ -1,0 +1,345 @@
+---
+/**
+ * Autoregressive generation: each predicted token is appended to the input
+ * and fed back into the model to predict the next one.
+ *
+ * Usage in an .mdx post:
+ *   import InferenceFigure from "@/components/widgets/training/InferenceFigure.astro";
+ *   <InferenceFigure />
+ *
+ * Props: caption (override, "" hides it), animate (false = static, no button).
+ */
+import Frame from "./Frame.astro";
+import ModelBox from "./ModelBox.astro";
+type Props = { caption?: string; animate?: boolean };
+const {
+  caption = "Autoregressive generation: the model predicts one token, appends it to the input, and runs again on the longer sequence. This repeats until it produces a special end-of-sequence token or hits a length limit.",
+  animate = true,
+} = Astro.props;
+const m = "tf-arrow-inference";
+const arrow = `url(#${m})`;
+---
+
+<Frame caption={caption} animate={animate}>
+  <svg
+    viewBox="0 0 720 270"
+    role="img"
+    aria-label="Four steps of generation: from 'The cat sat' the model predicts 'on', then 'the', then 'mat', then a period, each time feeding the new token back in"
+  >
+    <defs
+      ><marker
+        id={m}
+        viewBox="0 0 10 10"
+        refX="9"
+        refY="5"
+        markerWidth="7"
+        markerHeight="7"
+        orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"></path></marker
+      ></defs
+    >
+    <text class="lbl small muted" x="86" y="22">input: all tokens so far</text>
+    <text class="lbl small muted" x="567" y="22" text-anchor="middle"
+      >next token</text
+    >
+    <g class="ar-row ar-r0">
+      <text class="lbl small muted" x="14" y="65">step 1</text>
+      <rect class="box" x="86" y="44" width="50" height="32" rx="6"></rect><text
+        class="lbl mono"
+        x="111"
+        y="65"
+        text-anchor="middle">The</text
+      ><rect class="box" x="142" y="44" width="50" height="32" rx="6"
+      ></rect><text class="lbl mono" x="167" y="65" text-anchor="middle"
+        >cat</text
+      ><rect class="box" x="198" y="44" width="50" height="32" rx="6"
+      ></rect><text class="lbl mono" x="223" y="65" text-anchor="middle"
+        >sat</text
+      >
+      <path class="line" d="M252,60 L432,60" marker-end={arrow}></path>
+      <ModelBox x={438} y={44} w={76} h={32} />
+      <path class="line" d="M516,60 L534,60" marker-end={arrow}></path>
+    </g>
+    <g class="ar-out ar-o0">
+      <rect class="accent-fill" x="540" y="44" width="54" height="32" rx="6"
+      ></rect>
+      <text
+        class="lbl mono on-accent strong"
+        x="567"
+        y="65"
+        text-anchor="middle">on</text
+      >
+    </g>
+    <g class="ar-row ar-r1">
+      <text class="lbl small muted" x="14" y="123">step 2</text>
+      <rect class="box" x="86" y="102" width="50" height="32" rx="6"
+      ></rect><text class="lbl mono" x="111" y="123" text-anchor="middle"
+        >The</text
+      ><rect class="box" x="142" y="102" width="50" height="32" rx="6"
+      ></rect><text class="lbl mono" x="167" y="123" text-anchor="middle"
+        >cat</text
+      ><rect class="box" x="198" y="102" width="50" height="32" rx="6"
+      ></rect><text class="lbl mono" x="223" y="123" text-anchor="middle"
+        >sat</text
+      ><rect class="accent-soft" x="254" y="102" width="50" height="32" rx="6"
+      ></rect><text class="lbl mono" x="279" y="123" text-anchor="middle"
+        >on</text
+      >
+      <path class="line" d="M308,118 L432,118" marker-end={arrow}></path>
+      <ModelBox x={438} y={102} w={76} h={32} />
+      <path class="line" d="M516,118 L534,118" marker-end={arrow}></path>
+      <path
+        class="flow back"
+        d="M567,78 C567,94 339,88 279,99"
+        marker-end={arrow}></path>
+    </g>
+    <g class="ar-out ar-o1">
+      <rect class="accent-fill" x="540" y="102" width="54" height="32" rx="6"
+      ></rect>
+      <text
+        class="lbl mono on-accent strong"
+        x="567"
+        y="123"
+        text-anchor="middle">the</text
+      >
+    </g>
+    <g class="ar-row ar-r2">
+      <text class="lbl small muted" x="14" y="181">step 3</text>
+      <rect class="box" x="86" y="160" width="50" height="32" rx="6"
+      ></rect><text class="lbl mono" x="111" y="181" text-anchor="middle"
+        >The</text
+      ><rect class="box" x="142" y="160" width="50" height="32" rx="6"
+      ></rect><text class="lbl mono" x="167" y="181" text-anchor="middle"
+        >cat</text
+      ><rect class="box" x="198" y="160" width="50" height="32" rx="6"
+      ></rect><text class="lbl mono" x="223" y="181" text-anchor="middle"
+        >sat</text
+      ><rect class="box" x="254" y="160" width="50" height="32" rx="6"
+      ></rect><text class="lbl mono" x="279" y="181" text-anchor="middle"
+        >on</text
+      ><rect class="accent-soft" x="310" y="160" width="50" height="32" rx="6"
+      ></rect><text class="lbl mono" x="335" y="181" text-anchor="middle"
+        >the</text
+      >
+      <path class="line" d="M364,176 L432,176" marker-end={arrow}></path>
+      <ModelBox x={438} y={160} w={76} h={32} />
+      <path class="line" d="M516,176 L534,176" marker-end={arrow}></path>
+      <path
+        class="flow back"
+        d="M567,136 C567,152 395,146 335,157"
+        marker-end={arrow}></path>
+    </g>
+    <g class="ar-out ar-o2">
+      <rect class="accent-fill" x="540" y="160" width="54" height="32" rx="6"
+      ></rect>
+      <text
+        class="lbl mono on-accent strong"
+        x="567"
+        y="181"
+        text-anchor="middle">mat</text
+      >
+    </g>
+    <g class="ar-row ar-r3">
+      <text class="lbl small muted" x="14" y="239">step 4</text>
+      <rect class="box" x="86" y="218" width="50" height="32" rx="6"
+      ></rect><text class="lbl mono" x="111" y="239" text-anchor="middle"
+        >The</text
+      ><rect class="box" x="142" y="218" width="50" height="32" rx="6"
+      ></rect><text class="lbl mono" x="167" y="239" text-anchor="middle"
+        >cat</text
+      ><rect class="box" x="198" y="218" width="50" height="32" rx="6"
+      ></rect><text class="lbl mono" x="223" y="239" text-anchor="middle"
+        >sat</text
+      ><rect class="box" x="254" y="218" width="50" height="32" rx="6"
+      ></rect><text class="lbl mono" x="279" y="239" text-anchor="middle"
+        >on</text
+      ><rect class="box" x="310" y="218" width="50" height="32" rx="6"
+      ></rect><text class="lbl mono" x="335" y="239" text-anchor="middle"
+        >the</text
+      ><rect class="accent-soft" x="366" y="218" width="50" height="32" rx="6"
+      ></rect><text class="lbl mono" x="391" y="239" text-anchor="middle"
+        >mat</text
+      >
+      <path class="line" d="M420,234 L432,234" marker-end={arrow}></path>
+      <ModelBox x={438} y={218} w={76} h={32} />
+      <path class="line" d="M516,234 L534,234" marker-end={arrow}></path>
+      <path
+        class="flow back"
+        d="M567,194 C567,210 451,204 391,215"
+        marker-end={arrow}></path>
+    </g>
+    <g class="ar-out ar-o3">
+      <rect class="accent-fill" x="540" y="218" width="54" height="32" rx="6"
+      ></rect>
+      <text
+        class="lbl mono on-accent strong"
+        x="567"
+        y="239"
+        text-anchor="middle">.</text
+      >
+    </g>
+    <text class="lbl small accent" x="602" y="95">fed back in</text>
+  </svg>
+</Frame>
+
+<style is:global>
+  @keyframes tf-ar-r0 {
+    0%,
+    0% {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    4%,
+    90% {
+      opacity: 1;
+      transform: none;
+    }
+    97%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes tf-ar-o0 {
+    0%,
+    6% {
+      opacity: 0;
+      transform: scale(0.6);
+    }
+    10%,
+    90% {
+      opacity: 1;
+      transform: none;
+    }
+    97%,
+    100% {
+      opacity: 0;
+    }
+  }
+  .tf-anim:not(.is-static) .ar-r0 {
+    animation: tf-ar-r0 10s ease-out infinite;
+  }
+  .tf-anim:not(.is-static) .ar-o0 {
+    animation: tf-ar-o0 10s ease-out infinite;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  @keyframes tf-ar-r1 {
+    0%,
+    14% {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    18%,
+    90% {
+      opacity: 1;
+      transform: none;
+    }
+    97%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes tf-ar-o1 {
+    0%,
+    20% {
+      opacity: 0;
+      transform: scale(0.6);
+    }
+    24%,
+    90% {
+      opacity: 1;
+      transform: none;
+    }
+    97%,
+    100% {
+      opacity: 0;
+    }
+  }
+  .tf-anim:not(.is-static) .ar-r1 {
+    animation: tf-ar-r1 10s ease-out infinite;
+  }
+  .tf-anim:not(.is-static) .ar-o1 {
+    animation: tf-ar-o1 10s ease-out infinite;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  @keyframes tf-ar-r2 {
+    0%,
+    28% {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    32%,
+    90% {
+      opacity: 1;
+      transform: none;
+    }
+    97%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes tf-ar-o2 {
+    0%,
+    34% {
+      opacity: 0;
+      transform: scale(0.6);
+    }
+    38%,
+    90% {
+      opacity: 1;
+      transform: none;
+    }
+    97%,
+    100% {
+      opacity: 0;
+    }
+  }
+  .tf-anim:not(.is-static) .ar-r2 {
+    animation: tf-ar-r2 10s ease-out infinite;
+  }
+  .tf-anim:not(.is-static) .ar-o2 {
+    animation: tf-ar-o2 10s ease-out infinite;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  @keyframes tf-ar-r3 {
+    0%,
+    42% {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    46%,
+    90% {
+      opacity: 1;
+      transform: none;
+    }
+    97%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes tf-ar-o3 {
+    0%,
+    48% {
+      opacity: 0;
+      transform: scale(0.6);
+    }
+    52%,
+    90% {
+      opacity: 1;
+      transform: none;
+    }
+    97%,
+    100% {
+      opacity: 0;
+    }
+  }
+  .tf-anim:not(.is-static) .ar-r3 {
+    animation: tf-ar-r3 10s ease-out infinite;
+  }
+  .tf-anim:not(.is-static) .ar-o3 {
+    animation: tf-ar-o3 10s ease-out infinite;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+</style>

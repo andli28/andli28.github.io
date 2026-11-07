@@ -1,0 +1,78 @@
+---
+/**
+ * Reinforcement learning: sample, score, update.
+ *
+ * Usage in an .mdx post:
+ *   import RlFigure from "@/components/widgets/training/RlFigure.astro";
+ *   <RlFigure />
+ *
+ * Props: caption (override, "" hides it), animate (false = static, no button).
+ */
+import Frame from "./Frame.astro";
+import ModelBox from "./ModelBox.astro";
+type Props = { caption?: string; animate?: boolean };
+const {
+  caption = "Reinforcement learning: sample responses, score them, and update the model toward higher-scoring behavior. Scores can come from human preferences, a reward model, or automatic checks like unit tests.",
+  animate = true,
+} = Astro.props;
+const m = "tf-arrow-rl";
+const arrow = `url(#${m})`;
+---
+
+<Frame caption={caption} animate={animate}>
+  <svg
+    viewBox="0 0 720 250"
+    role="img"
+    aria-label="The model produces two responses, a reward scores them, and the model is updated toward the better one"
+  >
+    <defs
+      ><marker
+        id={m}
+        viewBox="0 0 10 10"
+        refX="9"
+        refY="5"
+        markerWidth="7"
+        markerHeight="7"
+        orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"></path></marker
+      ></defs
+    >
+    <rect class="box" x="6" y="86" width="90" height="48" rx="8"></rect>
+    <text class="lbl" x="51" y="115" text-anchor="middle">Prompt</text>
+    <path class="line" d="M98,110 L120,110" marker-end={arrow}></path>
+    <ModelBox x={126} y={80} w={90} h={60} />
+    <path class="line" d="M218,100 C240,100 240,62 262,62" marker-end={arrow}
+    ></path>
+    <path class="line" d="M218,120 C240,120 240,158 262,158" marker-end={arrow}
+    ></path>
+    <g class="reply" style="--i:0">
+      <rect class="box" x="268" y="38" width="212" height="48" rx="8"></rect>
+      <text class="lbl small muted" x="280" y="56">Response A</text>
+      <text class="lbl" x="280" y="76">clear, correct, polite</text>
+    </g>
+    <g class="reply" style="--i:1">
+      <rect class="box" x="268" y="134" width="212" height="48" rx="8"></rect>
+      <text class="lbl small muted" x="280" y="152">Response B</text>
+      <text class="lbl" x="280" y="172">rambling or unsafe</text>
+    </g>
+    <path class="line" d="M482,62 C500,62 500,100 514,100" marker-end={arrow}
+    ></path>
+    <path class="line" d="M482,158 C500,158 500,120 514,120" marker-end={arrow}
+    ></path>
+    <rect class="box strong-box" x="520" y="80" width="90" height="60" rx="10"
+    ></rect>
+    <text class="lbl strong" x="565" y="115" text-anchor="middle">Reward</text>
+    <g class="score" style="--i:0">
+      <text class="lbl strong accent" x="626" y="67">A +0.9 ✓</text>
+    </g>
+    <g class="score" style="--i:1">
+      <text class="lbl strong muted" x="626" y="163">B −0.6 ✗</text>
+    </g>
+    <path
+      class="flow back"
+      d="M565,142 C565,232 171,232 171,146"
+      marker-end={arrow}></path>
+    <text class="lbl small muted" x="368" y="244" text-anchor="middle"
+      >update the model to make high-reward responses more likely</text
+    >
+  </svg>
+</Frame>

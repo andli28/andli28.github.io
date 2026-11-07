@@ -1,0 +1,313 @@
+---
+/**
+ * Shared wrapper for the LLM-training figures: theme-aware styles,
+ * caption, and a play/pause button. Not used directly in posts; the
+ * five figure components (DataFigure, TokenizeFigure, ...) wrap themselves in it.
+ *
+ * Props:
+ *   caption  text under the figure; "" hides it
+ *   animate  false gives a static figure with no button (default true)
+ */
+type Props = { caption?: string; animate?: boolean };
+const { caption, animate = true } = Astro.props;
+---
+
+<figure class:list={["tf-root", { "tf-anim": animate }]} data-tf>
+  <slot />
+  {
+    (caption || animate) && (
+      <div class="tf-bar">
+        {caption ? <figcaption>{caption}</figcaption> : <span />}
+        {animate && (
+          <button
+            type="button"
+            class="tf-play"
+            aria-pressed="true"
+            aria-label="Pause animation"
+          >
+            <svg class="ico-pause" viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="3" y="2" width="3.5" height="12" rx="1" />
+              <rect x="9.5" y="2" width="3.5" height="12" rx="1" />
+            </svg>
+            <svg class="ico-play" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4 2.5v11a.8.8 0 0 0 1.2.7l9-5.5a.8.8 0 0 0 0-1.4l-9-5.5A.8.8 0 0 0 4 2.5z" />
+            </svg>
+            <span class="txt">Pause</span>
+          </button>
+        )}
+      </div>
+    )
+  }
+</figure>
+
+<script>
+  function mountTrainingFigures() {
+    const reduce = window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches;
+    document.querySelectorAll<HTMLElement>(".tf-root.tf-anim").forEach(fig => {
+      if (fig.dataset.tfMounted) return;
+      fig.dataset.tfMounted = "1";
+      const btn = fig.querySelector<HTMLButtonElement>(".tf-play");
+      if (!btn) return;
+      const txt = btn.querySelector(".txt")!;
+      const set = (playing: boolean) => {
+        fig.classList.toggle("is-paused", !playing);
+        btn.setAttribute("aria-pressed", String(playing));
+        btn.setAttribute(
+          "aria-label",
+          playing ? "Pause animation" : "Play animation"
+        );
+        txt.textContent = playing ? "Pause" : "Play";
+      };
+      // Readers who prefer reduced motion get the full static figure until they press Play.
+      if (reduce) {
+        fig.classList.add("is-static");
+        set(false);
+      }
+      btn.addEventListener("click", () => {
+        fig.classList.remove("is-static");
+        set(fig.classList.contains("is-paused"));
+      });
+    });
+  }
+  document.addEventListener("astro:page-load", mountTrainingFigures);
+</script>
+
+<style is:global>
+  /* Scoped under .tf-root with --tf-* variables so nothing leaks either way. */
+  .tf-root {
+    --tf-fg: var(--foreground);
+    --tf-bg: var(--background);
+    --tf-muted: var(--muted-foreground);
+    --tf-accent: var(--accent);
+    --tf-surface: color-mix(in srgb, var(--foreground) 4%, var(--background));
+    --tf-line: color-mix(in srgb, var(--foreground) 28%, var(--background));
+    --tf-accent-soft: color-mix(in srgb, var(--accent) 16%, var(--background));
+    --tf-accent-top: color-mix(in srgb, var(--accent) 70%, var(--background));
+    --tf-muted-soft: color-mix(
+      in srgb,
+      var(--foreground) 8%,
+      var(--background)
+    );
+    margin: 1.75rem 0;
+  }
+  .tf-root > svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+    font-family: inherit;
+  }
+  .tf-root .lbl {
+    fill: var(--tf-fg);
+    font-size: 15px;
+  }
+  .tf-root .small {
+    font-size: 12.5px;
+  }
+  .tf-root .strong {
+    font-weight: 600;
+  }
+  .tf-root .mono {
+    font-family: var(--font-app, ui-monospace, monospace);
+  }
+  .tf-root .muted {
+    fill: var(--tf-muted);
+  }
+  .tf-root .accent {
+    fill: var(--tf-accent);
+  }
+  .tf-root .on-accent {
+    fill: var(--accent-foreground, #fff);
+  }
+  .tf-root .box {
+    fill: var(--tf-surface);
+    stroke: var(--tf-line);
+    stroke-width: 1.25;
+  }
+  .tf-root .strong-box {
+    stroke: var(--tf-accent);
+    stroke-width: 2;
+  }
+  .tf-root .accent-soft {
+    fill: var(--tf-accent-soft);
+    stroke: var(--tf-accent);
+    stroke-width: 1.25;
+  }
+  .tf-root .accent-fill {
+    fill: var(--tf-accent);
+  }
+  .tf-root .accent-top {
+    fill: var(--tf-accent-top);
+  }
+  .tf-root .muted-fill {
+    fill: var(--tf-line);
+  }
+  .tf-root .muted-soft {
+    fill: var(--tf-muted-soft);
+    stroke: var(--tf-line);
+    stroke-width: 1.25;
+    stroke-dasharray: 4 4;
+  }
+  .tf-root .line {
+    fill: none;
+    stroke: var(--tf-muted);
+    stroke-width: 1.6;
+  }
+  .tf-root .line.thin {
+    stroke-width: 1.2;
+  }
+  .tf-root .divider {
+    stroke: var(--tf-line);
+    stroke-dasharray: 3 5;
+  }
+  .tf-root .flow {
+    fill: none;
+    stroke: var(--tf-muted);
+    stroke-width: 1.8;
+    stroke-dasharray: 5 6;
+  }
+  .tf-root .flow.back {
+    stroke: var(--tf-accent);
+  }
+  .tf-root marker path {
+    fill: var(--tf-muted);
+  }
+
+  /* The model block: outlined, with a network glyph, so it never reads as a token */
+  .tf-root .tf-model-box {
+    fill: color-mix(in srgb, var(--accent) 7%, var(--background));
+    stroke: var(--tf-accent);
+    stroke-width: 2;
+  }
+  .tf-root .tf-model-glyph line {
+    stroke: var(--tf-accent);
+    stroke-width: 0.7;
+    opacity: 0.55;
+  }
+  .tf-root .tf-model-glyph circle {
+    fill: var(--tf-accent);
+  }
+  .tf-root .tf-model-lbl {
+    fill: var(--tf-accent);
+    letter-spacing: 0.02em;
+  }
+
+  /* Caption + play/pause row */
+  .tf-root .tf-bar {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-top: 0.75rem;
+  }
+  .tf-root figcaption {
+    flex: 1;
+    margin: 0;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--tf-muted);
+  }
+  .tf-root .tf-play {
+    flex: none;
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.7rem;
+    font: inherit;
+    font-size: 0.8rem;
+    color: var(--tf-fg);
+    background: var(--tf-surface);
+    border: 1px solid var(--tf-line);
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .tf-root .tf-play:hover {
+    border-color: var(--tf-accent);
+    color: var(--tf-accent);
+  }
+  .tf-root .tf-play:focus-visible {
+    outline: 2px solid var(--tf-accent);
+    outline-offset: 2px;
+  }
+  .tf-root .tf-play svg {
+    width: 0.8rem;
+    height: 0.8rem;
+    fill: currentColor;
+  }
+  .tf-root .tf-play .ico-play {
+    display: none;
+  }
+  .tf-root.is-paused .tf-play .ico-play {
+    display: block;
+  }
+  .tf-root.is-paused .tf-play .ico-pause {
+    display: none;
+  }
+
+  /* ---- Animation ----
+     Paused freezes the current frame (like pausing a GIF).
+     is-static (reduced-motion readers, before they press Play) shows the full figure. */
+  .tf-anim:not(.is-static) .flow {
+    animation: tf-dash 1.2s linear infinite;
+  }
+  .tf-anim:not(.is-static) .flow.back {
+    animation-duration: 1.8s;
+  }
+  .tf-anim:not(.is-static) .pop,
+  .tf-anim:not(.is-static) .reply,
+  .tf-anim:not(.is-static) .score {
+    animation: tf-pop 7s ease-out infinite both;
+    animation-delay: calc(var(--i) * 0.35s);
+  }
+  .tf-anim:not(.is-static) .score {
+    animation-delay: calc(1.2s + var(--i) * 0.35s);
+  }
+  .tf-anim:not(.is-static) .bar {
+    transform-box: fill-box;
+    transform-origin: left center;
+    animation: tf-grow 6s ease-out infinite both;
+    animation-delay: calc(var(--i) * 0.12s);
+  }
+  .tf-root.is-paused * {
+    animation-play-state: paused !important;
+  }
+
+  @keyframes tf-dash {
+    to {
+      stroke-dashoffset: -22;
+    }
+  }
+  @keyframes tf-pop {
+    0% {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    8% {
+      opacity: 1;
+      transform: none;
+    }
+    88% {
+      opacity: 1;
+      transform: none;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes tf-grow {
+    0% {
+      transform: scaleX(0);
+    }
+    15% {
+      transform: scaleX(1);
+    }
+    90% {
+      transform: scaleX(1);
+    }
+    100% {
+      transform: scaleX(0);
+    }
+  }
+</style>
