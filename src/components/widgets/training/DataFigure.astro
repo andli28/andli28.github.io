@@ -1,0 +1,77 @@
+---
+/**
+ * Raw sources filtered into a training corpus.
+ *
+ * Usage in an .mdx post:
+ *   import DataFigure from "@/components/widgets/training/DataFigure.astro";
+ *   <DataFigure />
+ *
+ * Props: caption (override, "" hides it), animate (false = static, no button).
+ */
+import Frame from "./Frame.astro";
+type Props = { caption?: string; animate?: boolean };
+const {
+  caption = "Raw text from many sources is filtered, deduplicated and cleaned into one training corpus.",
+  animate = true,
+} = Astro.props;
+const m = "tf-arrow-data";
+const arrow = `url(#${m})`;
+---
+
+<Frame caption={caption} animate={animate}>
+  <svg
+    viewBox="0 0 720 230"
+    role="img"
+    aria-label="Data sources flowing through a filter into a training corpus"
+  >
+    <defs
+      ><marker
+        id={m}
+        viewBox="0 0 10 10"
+        refX="9"
+        refY="5"
+        markerWidth="7"
+        markerHeight="7"
+        orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"></path></marker
+      ></defs
+    >
+    {
+      ["Web pages", "Books", "Code", "Papers & forums"].map((s, i) => (
+        <g>
+          <rect
+            class="box"
+            x="16"
+            y={22 + i * 48}
+            width="150"
+            height="36"
+            rx="8"
+          />
+          <text class="lbl" x="91" y={45 + i * 48} text-anchor="middle">
+            {s}
+          </text>
+          <path
+            class="flow"
+            d={`M168,${40 + i * 48} C205,${40 + i * 48} 205,115 238,115`}
+            style={`--i:${i}`}
+          />
+        </g>
+      ))
+    }
+    <polygon class="accent-soft" points="240,24 400,78 400,152 240,206"
+    ></polygon>
+    <text class="lbl strong" x="312" y="94" text-anchor="middle">Filter</text>
+    <text class="lbl" x="312" y="118" text-anchor="middle">Deduplicate</text>
+    <text class="lbl" x="312" y="142" text-anchor="middle">Clean</text>
+    <path class="flow out" d="M404,115 L478,115" marker-end={arrow}></path>
+    <g class="cyl">
+      <path class="accent-fill" d="M490,70 v90 a85,18 0 0 0 170,0 v-90"></path>
+      <ellipse class="accent-top" cx="575" cy="70" rx="85" ry="18"></ellipse>
+    </g>
+    <text class="lbl on-accent strong" x="575" y="122" text-anchor="middle"
+      >Training corpus</text
+    >
+    <text class="lbl on-accent small" x="575" y="144" text-anchor="middle"
+      >trillions of tokens</text
+    >
+  </svg>
+</Frame>

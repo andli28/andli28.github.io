@@ -1,0 +1,54 @@
+---
+/**
+ * The "Model" block used inside the training/inference figures (an SVG <g>).
+ * Outlined box with a small neural-network glyph, so it never looks like a token.
+ * Short boxes (h < 50) put the glyph beside the label; taller ones stack them.
+ */
+type Props = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  label?: string;
+  class?: string;
+};
+const { x, y, w, h, label = "Model", class: cls } = Astro.props;
+const tall = h >= 50;
+const s = tall ? 1.35 : 0.95; // glyph scale; glyph is 20 x 16 units
+const gw = 20 * s;
+const gh = 16 * s;
+const textW = label.length * (tall ? 8.6 : 7.4);
+const gx = tall ? x + (w - gw) / 2 : x + (w - (gw + 6 + textW)) / 2;
+const gy = tall ? y + h / 2 - gh - 2 : y + (h - gh) / 2;
+const tx = tall ? x + w / 2 : gx + gw + 6;
+const ty = tall ? y + h / 2 + 17 : y + h / 2 + 4.5;
+const c1 = [4, 12],
+  c2 = [2, 8, 14],
+  c3 = [4, 12];
+const edges = [
+  ...c1.flatMap(a => c2.map(b => [2, a, 10, b])),
+  ...c2.flatMap(a => c3.map(b => [10, a, 18, b])),
+];
+---
+
+<g class:list={["tf-model", cls]}>
+  <rect
+    class="tf-model-box"
+    x={x}
+    y={y}
+    width={w}
+    height={h}
+    rx={Math.min(10, h / 3)}></rect>
+  <g transform={`translate(${gx} ${gy}) scale(${s})`} class="tf-model-glyph">
+    {edges.map(([x1, y1, x2, y2]) => <line x1={x1} y1={y1} x2={x2} y2={y2} />)}
+    {c1.map(cy => <circle cx="2" cy={cy} r="1.9" />)}
+    {c2.map(cy => <circle cx="10" cy={cy} r="1.9" />)}
+    {c3.map(cy => <circle cx="18" cy={cy} r="1.9" />)}
+  </g>
+  <text
+    class:list={["lbl strong tf-model-lbl", { small: !tall }]}
+    x={tx}
+    y={ty}
+    text-anchor={tall ? "middle" : "start"}>{label}</text
+  >
+</g>

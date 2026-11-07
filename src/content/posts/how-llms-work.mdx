@@ -1,0 +1,96 @@
+---
+title: "How Language Models Work: A 10,000-Foot View"
+description: "How LLMs are trained and how they generate text."
+pubDatetime: 2026-11-07T12:00:00-05:00
+tags:
+  - llm
+  - machine-learning
+draft: false
+---
+
+import DataFigure from "@/components/widgets/training/DataFigure.astro";
+import TokenizeFigure from "@/components/widgets/training/TokenizeFigure.astro";
+import PretrainFigure from "@/components/widgets/training/PretrainFigure.astro";
+import SftFigure from "@/components/widgets/training/SftFigure.astro";
+import RlFigure from "@/components/widgets/training/RlFigure.astro";
+import InferenceFigure from "@/components/widgets/training/InferenceFigure.astro";
+import LatencyFigure from "@/components/widgets/training/LatencyFigure.astro";
+
+Amazing progress has been made in the natural language processing (NLP) space since OpenAI's ChatGPT came out. We have a single model that can do summarization, translation, question answering, coding, and more.
+
+Here, I want to provide intuition of how a language model works, without getting into too much of the math.
+
+## Table of contents
+
+## What is a language model?
+
+A Large Language Model (LLM) is an AI model trained on an enormous amount of text and other data. Popular examples include OpenAI's ChatGPT, Google's Gemini, and Anthropic's Claude.
+
+Note that those popular models have now also evolved beyond language — all of them are now multimodal, meaning they can ingest and output a mix of text, images, audio, and video. As such, the language part of "LLM" is a bit of a misnomer now.
+
+The LLM also has a little sibling, the Small Language Model (SLM). The main difference is that they are much smaller, and usually designed to be deployed on local devices.
+
+Now that we know what LLMs are and what they can be used for, how are they created?
+
+## Training
+
+There are many components of modern LLM training:
+
+- **Data.** Gathering or curating as large and high-quality a dataset as possible. Cleaning (filtering, deduplication, removing low-quality text) is also done here.
+
+  <DataFigure />
+
+- **Tokenization.** Converting all of this data into a form the model can understand.
+
+  - A token is a unit of text. It can be a whole short word, part of a long word, or a punctuation mark. Roughly it is about 3/4 of an English word, on average.
+
+  <TokenizeFigure />
+
+- **Pre-training.** Use next-token prediction to learn most of the knowledge it will know. This is general grammar, linguistic patterns, how the world works, coding, and some reasoning.
+
+  <PretrainFigure />
+
+- **Post-training.** This is typically broken down into two (or more) parts:
+
+  - **Supervised fine-tuning (SFT)**, so the model knows how to use the knowledge it gained. This includes multi-turn conversations, following instructions, and tool use.
+
+    <SftFigure />
+
+  - **Reinforcement learning (RL)** methods so that the model is helpful, honest, and safe to use. It's also used to improve reasoning, using RL with automatically checkable rewards (for code or math questions).
+
+    <RlFigure />
+
+Now we have our trained model, that can output text when we prompt it. How does that work?
+
+## Inference
+
+Recall that these models were trained to predict the next token during the pre-training phase.
+
+During the inference phase (when we go to use the model), we predict the next token based on all previous tokens. Then, using that predicted token and all previous tokens, we predict the next one.
+
+This method of predicting tokens one after another is called an autoregressive model.
+
+<InferenceFigure />
+
+Great! Our model is being used. However, not all models are made equal. What do we care about when we serve a model?
+
+## What do users care about?
+
+There are several metrics users care about when they use a model. Besides the capability of a model, the model also must be fast enough so that the application feels interactive and engaging to the user. The most basic metrics around speed are time to first token (TTFT) and time between tokens (TBT). Other terms for TBT include inter-token latency (ITL) or time per output token (TPOT).
+
+- **TTFT** refers to the time it takes for the first token to appear.
+- **TBT** refers to the average time it takes to generate each token after the first one appears.
+
+<LatencyFigure />
+
+Therefore, total response time is roughly:
+
+$$
+\text{TTFT} + \text{TBT} \times (\text{number of tokens} - 1)
+$$
+
+Why do we separate measuring the speed of the first token from the rest of the tokens?
+
+To answer that, we'll need to go deeper into different phases of inference: prefill and decode, along with what is actually done on the GPU during these phases. We'll also dive into what the KV Cache is, and why it's used. These will be covered in the next post.
+
+{/* TODO: link the next post above once it exists */}

@@ -1,0 +1,95 @@
+---
+/**
+ * A sentence split into tokens and token IDs.
+ *
+ * Usage in an .mdx post:
+ *   import TokenizeFigure from "@/components/widgets/training/TokenizeFigure.astro";
+ *   <TokenizeFigure />
+ *
+ * Props: caption (override, "" hides it), animate (false = static, no button).
+ */
+import Frame from "./Frame.astro";
+type Props = { caption?: string; animate?: boolean };
+const {
+  caption = "A tokenizer splits text into tokens and maps each one to an integer ID. Token IDs shown are illustrative.",
+  animate = true,
+} = Astro.props;
+const m = "tf-arrow-tokenize";
+const arrow = `url(#${m})`;
+const tokens = [
+  { t: "The", id: 464 },
+  { t: "␣cat", id: 3797 },
+  { t: "␣sat", id: 3332 },
+  { t: "␣on", id: 319 },
+  { t: "␣the", id: 262 },
+  { t: "␣mat", id: 2603 },
+  { t: ".", id: 13 },
+];
+---
+
+<Frame caption={caption} animate={animate}>
+  <svg
+    viewBox="0 0 720 240"
+    role="img"
+    aria-label="The sentence 'The cat sat on the mat.' split into tokens and token IDs"
+  >
+    <defs
+      ><marker
+        id={m}
+        viewBox="0 0 10 10"
+        refX="9"
+        refY="5"
+        markerWidth="7"
+        markerHeight="7"
+        orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"></path></marker
+      ></defs
+    >
+    <rect class="box" x="210" y="14" width="300" height="42" rx="8"></rect>
+    <text class="lbl strong" x="360" y="41" text-anchor="middle"
+      >“The cat sat on the mat.”</text
+    >
+    <path class="line" d="M360,60 L360,92" marker-end={arrow}></path>
+    <text class="lbl small muted" x="372" y="81">split into tokens</text>
+    {
+      tokens.map((k, i) => (
+        <g class="pop" style={`--i:${i}`}>
+          <rect
+            class="accent-soft"
+            x={36 + i * 94}
+            y="100"
+            width="84"
+            height="38"
+            rx="7"
+          />
+          <text class="lbl mono" x={78 + i * 94} y="124" text-anchor="middle">
+            {k.t}
+          </text>
+          <path
+            class="line thin"
+            d={`M${78 + i * 94},142 L${78 + i * 94},168`}
+            marker-end={arrow}
+          />
+          <rect
+            class="box"
+            x={36 + i * 94}
+            y="174"
+            width="84"
+            height="34"
+            rx="7"
+          />
+          <text
+            class="lbl mono strong"
+            x={78 + i * 94}
+            y="196"
+            text-anchor="middle"
+          >
+            {k.id}
+          </text>
+        </g>
+      ))
+    }
+    <text class="lbl small muted" x="360" y="230" text-anchor="middle"
+      >token IDs: what the model actually sees (␣ = space)</text
+    >
+  </svg>
+</Frame>
