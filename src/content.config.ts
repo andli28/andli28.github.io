@@ -40,6 +40,8 @@ const lab = defineCollection({
       pubDatetime: z.date(),
       modDatetime: z.date().optional().nullable(),
       draft: z.boolean().optional(),
+      // Render as a full-screen piece, without the site header and footer.
+      fullscreen: z.boolean().default(false),
       ogImage: image().or(z.string()).optional(),
       canonicalURL: z.string().optional(),
       timezone: z
