@@ -274,8 +274,8 @@ export function mountFocusTimer(root) {
 
   // ---- Gentle notices ----------------------------------------------------
 
-  // A soft note at the top of the page, and (if allowed, and the tab is in
-  // the background) a silent system notification with the same words.
+  // A soft note at the top of the page, and (if allowed, and you're not
+  // looking at the page) a silent system notification with the same words.
   function notice(text) {
     el.toast.textContent = text;
     el.toast.dataset.show = "true";
@@ -286,7 +286,8 @@ export function mountFocusTimer(root) {
 
     if (
       state.notify &&
-      document.hidden &&
+      // Hidden tab, minimized window, or another app in front.
+      (document.hidden || !document.hasFocus()) &&
       "Notification" in window &&
       Notification.permission === "granted"
     ) {
