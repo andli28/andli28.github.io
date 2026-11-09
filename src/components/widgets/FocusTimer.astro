@@ -1,0 +1,432 @@
+---
+/**
+ * Pomodoro-style focus timer with a task picker and a session log.
+ * Everything is saved in this browser's localStorage.
+ *
+ * Usage in an .mdx file:
+ *   import FocusTimer from "@/components/widgets/FocusTimer.astro";
+ *   <FocusTimer />
+ */
+---
+
+<div class="ft-root not-prose" data-mode="focus">
+  <div class="ft-card">
+    <div class="ft-modes" role="group" aria-label="Timer mode">
+      <button type="button" data-ft-mode="focus" aria-pressed="true"
+        >Focus</button
+      >
+      <button type="button" data-ft-mode="short" aria-pressed="false"
+        >Short break</button
+      >
+      <button type="button" data-ft-mode="long" aria-pressed="false"
+        >Long break</button
+      >
+    </div>
+
+    <div class="ft-dial">
+      <svg viewBox="0 0 200 200" aria-hidden="true">
+        <circle class="ft-track" cx="100" cy="100" r="90"></circle>
+        <circle class="ft-progress" data-ft="ring" cx="100" cy="100" r="90"
+        ></circle>
+      </svg>
+      <div class="ft-readout">
+        <span class="ft-time" data-ft="time" role="timer" aria-live="off"
+          >25:00</span
+        >
+        <span class="ft-sub" data-ft="sub">Session 1 of 4</span>
+      </div>
+    </div>
+
+    <div class="ft-task">
+      <label for="ft-task-input">Working on</label>
+      <input
+        id="ft-task-input"
+        data-ft="task"
+        type="text"
+        maxlength="80"
+        autocomplete="off"
+        list="ft-task-recent"
+        placeholder="What will you focus on?"
+      />
+      <datalist id="ft-task-recent" data-ft="recent"></datalist>
+      <p class="ft-hint" data-ft="hint" aria-live="polite"></p>
+    </div>
+
+    <div class="ft-controls">
+      <button type="button" class="ft-btn ft-primary" data-ft="start"
+        >Start</button
+      >
+      <button type="button" class="ft-btn" data-ft="reset">Reset</button>
+      <button type="button" class="ft-btn" data-ft="skip">Skip</button>
+    </div>
+    <p class="ft-keys">Press <kbd>Space</kbd> to start or pause.</p>
+
+    <details class="ft-settings">
+      <summary>Settings</summary>
+      <div class="ft-grid">
+        <label
+          >Focus <span
+            ><input type="number" min="1" max="180" data-ft-set="focus" /> min</span
+          ></label
+        >
+        <label
+          >Short break <span
+            ><input type="number" min="1" max="60" data-ft-set="short" /> min</span
+          ></label
+        >
+        <label
+          >Long break <span
+            ><input type="number" min="1" max="90" data-ft-set="long" /> min</span
+          ></label
+        >
+        <label
+          >Long break every <span
+            ><input type="number" min="2" max="12" data-ft-set="every" /> sessions</span
+          ></label
+        >
+      </div>
+      <div class="ft-sound">
+        <label
+          ><input type="checkbox" data-ft-set="sound" /> Chime when a session ends</label
+        >
+        <button type="button" class="ft-link" data-ft="test">Play chime</button>
+      </div>
+    </details>
+  </div>
+
+  <section class="ft-log" aria-labelledby="ft-log-title">
+    <div class="ft-log-head">
+      <h3 id="ft-log-title">Today</h3>
+      <span data-ft="total"></span>
+    </div>
+    <ol data-ft="today"></ol>
+    <p class="ft-empty" data-ft="empty">No focus sessions yet today.</p>
+    <details class="ft-earlier" data-ft="earlier-wrap" hidden>
+      <summary>Earlier</summary>
+      <div data-ft="earlier"></div>
+    </details>
+    <button type="button" class="ft-link ft-clear" data-ft="clear" hidden
+      >Clear history</button
+    >
+  </section>
+</div>
+
+<script>
+  // Mount now and after each client-side navigation; mounting twice is a no-op.
+  import { mountFocusTimer } from "./focus-timer.js";
+  const mountAll = () =>
+    document.querySelectorAll<HTMLElement>(".ft-root").forEach(mountFocusTimer);
+  mountAll();
+  document.addEventListener("astro:page-load", mountAll);
+</script>
+
+<style is:global>
+  .ft-root {
+    --ft-fg: var(--foreground);
+    --ft-muted: var(--muted-foreground);
+    --ft-surface: color-mix(in srgb, var(--foreground) 3%, var(--background));
+    --ft-soft: color-mix(in srgb, var(--foreground) 8%, var(--background));
+    --ft-line: color-mix(in srgb, var(--foreground) 14%, var(--background));
+    --ft-color: var(--accent);
+    --ft-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+
+    display: grid;
+    gap: 1.5rem;
+    margin-block: 2rem;
+    color: var(--ft-fg);
+    font-size: 0.95rem;
+    line-height: 1.5;
+  }
+  .ft-root[data-mode="short"],
+  .ft-root[data-mode="long"] {
+    --ft-color: #1f8f86;
+  }
+  [data-theme="dark"] .ft-root[data-mode="short"],
+  [data-theme="dark"] .ft-root[data-mode="long"] {
+    --ft-color: #3cc1b5;
+  }
+
+  .ft-card {
+    display: grid;
+    justify-items: center;
+    gap: 1.25rem;
+    padding: 1.5rem 1rem;
+    border: 1px solid var(--ft-line);
+    border-radius: 12px;
+    background: var(--ft-surface);
+  }
+
+  .ft-modes {
+    display: inline-flex;
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--ft-soft);
+  }
+  .ft-modes button {
+    padding: 0.35rem 0.85rem;
+    border-radius: 999px;
+    color: var(--ft-muted);
+    font-size: 0.85rem;
+    transition:
+      color 150ms ease,
+      background-color 150ms ease;
+  }
+  .ft-modes button[aria-pressed="true"] {
+    background: var(--background);
+    color: var(--ft-fg);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  }
+
+  .ft-dial {
+    position: relative;
+    width: min(240px, 70vw);
+    aspect-ratio: 1;
+  }
+  .ft-dial svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+  }
+  .ft-dial circle {
+    fill: none;
+    stroke-width: 8;
+  }
+  .ft-track {
+    stroke: var(--ft-soft);
+  }
+  .ft-progress {
+    stroke: var(--ft-color);
+    stroke-linecap: round;
+    transition: stroke 200ms ease;
+  }
+  .ft-readout {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 0.25rem;
+  }
+  .ft-time {
+    font-size: clamp(2.5rem, 12vw, 3.25rem);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+  .ft-sub {
+    color: var(--ft-muted);
+    font-size: 0.8rem;
+  }
+
+  .ft-task {
+    display: grid;
+    gap: 0.35rem;
+    width: min(100%, 360px);
+  }
+  .ft-task label {
+    color: var(--ft-muted);
+    font-size: 0.8rem;
+  }
+  .ft-task input {
+    width: 100%;
+    padding: 0.55rem 0.75rem;
+    border: 1px solid var(--ft-line);
+    border-radius: 8px;
+    background: var(--background);
+    color: var(--ft-fg);
+    /* 16px keeps iOS Safari from zooming the page on focus */
+    font-size: 16px;
+  }
+  .ft-task input:focus-visible {
+    outline: 2px solid var(--ft-color);
+    outline-offset: 1px;
+  }
+  .ft-task input[readonly] {
+    background: transparent;
+  }
+  .ft-hint {
+    min-height: 1.2em;
+    color: #c2410c;
+    font-size: 0.8rem;
+  }
+  [data-theme="dark"] .ft-hint {
+    color: #fdba74;
+  }
+
+  .ft-controls {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .ft-btn {
+    min-width: 5.5rem;
+    padding: 0.55rem 1rem;
+    border: 1px solid var(--ft-line);
+    border-radius: 8px;
+    background: var(--background);
+    font-weight: 500;
+    transition: transform 160ms var(--ft-ease-out);
+  }
+  .ft-btn:active {
+    transform: scale(0.97);
+  }
+  .ft-primary {
+    min-width: 7rem;
+    border-color: var(--ft-color);
+    background: var(--ft-color);
+    color: #fff;
+    transition:
+      transform 160ms var(--ft-ease-out),
+      background-color 200ms ease,
+      border-color 200ms ease;
+  }
+  .ft-keys {
+    margin-top: -0.5rem;
+    color: var(--ft-muted);
+    font-size: 0.75rem;
+  }
+  .ft-keys kbd {
+    padding: 0 0.3rem;
+    border: 1px solid var(--ft-line);
+    border-radius: 4px;
+    font-size: 0.7rem;
+  }
+
+  .ft-settings,
+  .ft-earlier {
+    width: 100%;
+  }
+  .ft-settings summary,
+  .ft-earlier summary {
+    width: fit-content;
+    margin-inline: auto;
+    color: var(--ft-muted);
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .ft-earlier summary {
+    margin-inline: 0;
+  }
+  .ft-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.75rem;
+    margin-top: 1rem;
+  }
+  .ft-grid label {
+    display: grid;
+    gap: 0.25rem;
+    color: var(--ft-muted);
+    font-size: 0.8rem;
+  }
+  .ft-grid span {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--ft-fg);
+  }
+  .ft-grid input {
+    width: 4.5rem;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--ft-line);
+    border-radius: 6px;
+    background: var(--background);
+    font-size: 16px;
+  }
+  .ft-sound {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: 1rem;
+    font-size: 0.85rem;
+  }
+  .ft-sound label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .ft-link {
+    color: var(--accent);
+    font-size: 0.85rem;
+    text-decoration: underline;
+    text-decoration-style: dashed;
+    text-underline-offset: 4px;
+  }
+
+  .ft-log {
+    display: grid;
+    gap: 0.5rem;
+  }
+  .ft-log-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .ft-log h3 {
+    font-size: 1.05rem;
+    font-weight: 600;
+  }
+  .ft-log-head span {
+    color: var(--ft-muted);
+    font-size: 0.85rem;
+  }
+  .ft-log ol {
+    display: grid;
+  }
+  .ft-log li {
+    display: grid;
+    grid-template-columns: 4.5rem 1fr auto;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px dashed var(--ft-line);
+  }
+  .ft-log li .ft-at,
+  .ft-log li .ft-min {
+    color: var(--ft-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .ft-log li .ft-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .ft-empty {
+    color: var(--ft-muted);
+  }
+  .ft-day {
+    margin-top: 0.75rem;
+  }
+  .ft-day h4 {
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .ft-clear {
+    justify-self: start;
+    margin-top: 0.5rem;
+    color: var(--ft-muted);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .ft-modes button:not([aria-pressed="true"]):hover {
+      color: var(--ft-fg);
+    }
+    .ft-btn:not(.ft-primary):hover {
+      background: var(--ft-soft);
+    }
+  }
+  @media (hover: none) {
+    .ft-keys {
+      display: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ft-btn,
+    .ft-primary {
+      transition: none;
+    }
+    .ft-btn:active {
+      transform: none;
+    }
+  }
+</style>
