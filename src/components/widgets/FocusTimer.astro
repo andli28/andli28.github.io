@@ -602,7 +602,8 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     transform: scaleX(0.7);
     transition:
       transform 200ms var(--ft-ease-out),
-      background-color 200ms ease;
+      background-color 200ms ease,
+      opacity 200ms ease;
   }
   .ft-task:focus-within::after {
     background: var(--ft-color);
@@ -612,9 +613,10 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     background: var(--ft-hot);
     transform: scaleX(1);
   }
-  /* While a session runs the line is a title, not a field. */
-  .ft[data-state="running"] .ft-task::after,
-  .ft[data-state="paused"] .ft-task::after {
+  /* While a session runs the line reads as a title; the writing line comes
+     back when you hover or click in to rename it. */
+  .ft[data-state="running"] .ft-task:not(:focus-within)::after,
+  .ft[data-state="paused"] .ft-task:not(:focus-within)::after {
     opacity: 0;
   }
 
@@ -669,9 +671,6 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
   }
   .ft-task input:focus::placeholder {
     color: rgb(236 232 225 / 0.3);
-  }
-  .ft-task input[readonly] {
-    cursor: default;
   }
   .ft.needs-task .ft-task input::placeholder {
     color: var(--ft-hot);
@@ -993,7 +992,11 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
       border-color: var(--ft-dim);
       color: var(--ft-ink);
     }
-    .ft-task:hover input:not([readonly])::placeholder {
+    .ft[data-state="running"] .ft-task:hover::after,
+    .ft[data-state="paused"] .ft-task:hover::after {
+      opacity: 1;
+    }
+    .ft-task:hover input::placeholder {
       color: rgb(236 232 225 / 0.6);
     }
     .ft-task:hover:not(:focus-within)::after {

@@ -1043,12 +1043,39 @@ export function mountFocusTimer(root) {
     if (el.task.value.trim()) root.classList.remove("needs-task");
     renderRecent();
   });
+  // Renaming mid-session: the task line stays editable while a focus
+  // session runs or is paused. The new name is saved on Enter or when you
+  // click away, and in a plan it renames the current block too.
+  const renaming = () => state.mode === "focus" && inProgress();
+
+  function commitTask() {
+    const name = el.task.value.trim();
+    if (!name || name === state.task) {
+      // An empty name mid-session isn't allowed; keep the old one.
+      el.task.value = state.task;
+      return;
+    }
+    state.task = name;
+    el.task.value = name;
+    const block = state.plan?.blocks[state.planIdx];
+    if (block?.kind === "focus") block.label = name;
+    save();
+    render();
+  }
+
   el.task.addEventListener("keydown", e => {
     if (e.key === "Enter") {
       e.preventDefault();
-      if (state.running) el.task.blur();
+      if (renaming())
+        el.task.blur(); // saves via the blur handler
       else tryStart();
+    } else if (e.key === "Escape" && renaming()) {
+      el.task.value = state.task;
+      el.task.blur();
     }
+  });
+  el.task.addEventListener("blur", () => {
+    if (renaming()) commitTask();
   });
 
   const onKey = e => {
@@ -1300,9 +1327,15 @@ export function mountFocusTimer(root) {
       }
     }
 
-    const locked = state.mode === "focus" && inProgress();
-    el.task.readOnly = locked;
-    if (locked) el.task.value = state.task;
+    // Mid-session the line shows the session's name, unless you're in the
+    // middle of renaming it.
+    if (
+      state.mode === "focus" &&
+      inProgress() &&
+      document.activeElement !== el.task
+    ) {
+      el.task.value = state.task;
+    }
     el.task.placeholder =
       state.mode === "break"
         ? state.breakKind === "wrap"
