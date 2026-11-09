@@ -28,6 +28,27 @@ const posts = defineCollection({
     }),
 });
 
+const lab = defineCollection({
+  loader: glob({
+    pattern: "**/[^_]*.{md,mdx}",
+    base: "./src/content/lab",
+  }),
+  schema: ({ image }) =>
+    z.object({
+      title: z.string(),
+      description: z.string(),
+      pubDatetime: z.date(),
+      modDatetime: z.date().optional().nullable(),
+      draft: z.boolean().optional(),
+      ogImage: image().or(z.string()).optional(),
+      canonicalURL: z.string().optional(),
+      timezone: z
+        .string()
+        .optional()
+        .transform(tz => tz || undefined),
+    }),
+});
+
 const pages = defineCollection({
   loader: glob({ pattern: "**/[^_]*.{md,mdx}", base: "./src/content/pages" }),
   schema: z.object({
@@ -38,4 +59,4 @@ const pages = defineCollection({
   }),
 });
 
-export const collections = { posts, pages };
+export const collections = { posts, lab, pages };

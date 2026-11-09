@@ -1,0 +1,59 @@
+---
+import { type CollectionEntry, getCollection, render } from "astro:content";
+import Layout from "@/layouts/Layout.astro";
+import Header from "@/components/Header.astro";
+import Breadcrumb from "@/components/Breadcrumb.astro";
+import Datetime from "@/components/Datetime.astro";
+import Footer from "@/components/Footer.astro";
+import { getLabSlug, getSortedLab } from "@/utils/getSortedLab";
+import config from "@/config";
+
+export async function getStaticPaths() {
+  const entries = getSortedLab(await getCollection("lab"));
+  return entries.map(entry => ({
+    params: { slug: getLabSlug(entry.id) },
+    props: { entry },
+  }));
+}
+
+type Props = { entry: CollectionEntry<"lab"> };
+
+const { entry } = Astro.props;
+const {
+  title,
+  description,
+  pubDatetime,
+  modDatetime,
+  timezone,
+  ogImage,
+  canonicalURL,
+} = entry.data;
+const { Content } = await render(entry);
+
+const ogImageUrl = typeof ogImage === "string" ? ogImage : ogImage?.src;
+---
+
+<Layout
+  title={`${title} | ${config.site.title}`}
+  description={description}
+  ogImage={ogImageUrl}
+  canonicalURL={canonicalURL}
+>
+  <Header />
+
+  <Breadcrumb />
+
+  <main id="main-content" class="app-layout pb-4">
+    <h1 class="text-accent text-2xl font-bold sm:text-3xl">{title}</h1>
+    <div class="my-2">
+      <Datetime {pubDatetime} {modDatetime} {timezone} size="lg" />
+    </div>
+    <p class="mt-2 italic">{description}</p>
+
+    <article class="app-prose max-w-app mt-8 w-full">
+      <Content />
+    </article>
+  </main>
+
+  <Footer />
+</Layout>

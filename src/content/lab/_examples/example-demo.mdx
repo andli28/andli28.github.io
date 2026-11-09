@@ -1,0 +1,28 @@
+---
+title: "Example demo: a click counter"
+description: "A template for lab entries. It's a draft, so it only shows up in local preview."
+pubDatetime: 2026-11-09T12:00:00-05:00
+draft: true
+---
+
+Lab entries are `.mdx` files in `src/content/lab/`. Write a little intro, then drop in an interactive component from `src/components/widgets/` (or inline HTML and a `<script>` like below).
+
+<div class="not-prose my-6 flex items-center gap-4">
+  <button id="demo-counter" type="button" class="border-border rounded border px-4 py-2 font-medium">
+    Clicked 0 times
+  </button>
+</div>
+
+<script>
+  {`
+  document.addEventListener("astro:page-load", () => {
+    const button = document.getElementById("demo-counter");
+    if (!button) return;
+    let count = 0;
+    button.addEventListener("click", () => {
+      count += 1;
+      button.textContent = "Clicked " + count + (count === 1 ? " time" : " times");
+    });
+  });
+  `}
+</script>
