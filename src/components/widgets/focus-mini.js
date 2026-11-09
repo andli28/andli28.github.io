@@ -7,6 +7,7 @@
 // timer.
 
 const RING = 2 * Math.PI * 30;
+const DIAL_MS = 60 * 60_000;
 
 const hasDocumentPip = () =>
   typeof window !== "undefined" && "documentPictureInPicture" in window;
@@ -90,29 +91,60 @@ const ICON_PAUSE =
 const ICON_PLAY =
   '<svg viewBox="0 0 14 14" aria-hidden="true"><path d="M4 2.2v9.6a.6.6 0 0 0 .9.5l7.6-4.8a.6.6 0 0 0 0-1L4.9 1.7a.6.6 0 0 0-.9.5Z" fill="currentColor"/></svg>';
 
+function fmtClock(ms) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(total / 60);
+  const sec = total % 60;
+  return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
+
 /**
+ * The mini window keeps its own time: the main page sends the session's
+ * end time (or the paused remainder) whenever something changes, and the
+ * mini window counts down from that on its own frame loop. A background
+ * tab gets throttled or frozen by the browser, but the mini window is on
+ * screen, so its countdown keeps going regardless.
+ *
  * @param {{ onToggle: () => void, onTick: () => void, onClose: () => void }} hooks
- *   onTick runs every half second while the mini window is open, from a
- *   timer that belongs to the (visible) mini window, so a hidden main tab
- *   can't throttle the countdown.
+ *   onTick nudges the main page about once a second (and right at 00:00)
+ *   so phase changes happen on time even while its own timers are slowed.
  */
 export function createMini({ onToggle, onTick, onClose }) {
   let pip = null; // Document PiP window
   let video = null; // video PiP fallback
   let canvas = null;
   let ticker = null;
-  let last = null;
+  let raf = 0;
+  let view = null; // latest state from the main page
+  let painted = "";
+  let lastNudge = 0;
   const nodes = {};
 
   const isOpen = () => Boolean(pip || video);
 
-  async function open(view) {
-    if (isOpen()) return;
-    if (hasDocumentPip()) await openDocument(view);
-    else if (hasVideoPip()) await openVideo(view);
+  // Time left, computed here from the end time rather than sent each second.
+  function leftMs() {
+    if (!view) return 0;
+    return view.endAt != null
+      ? Math.max(0, view.endAt - Date.now())
+      : view.remaining;
   }
 
-  async function openDocument(view) {
+  function nudge(force) {
+    const now = Date.now();
+    if (force || now - lastNudge >= 1000) {
+      lastNudge = now;
+      onTick();
+    }
+  }
+
+  async function open(initial) {
+    if (isOpen()) return;
+    if (hasDocumentPip()) await openDocument(initial);
+    else if (hasVideoPip()) await openVideo(initial);
+  }
+
+  async function openDocument(initial) {
     pip = await window.documentPictureInPicture.requestWindow({
       width: 300,
       height: 104,
@@ -138,12 +170,25 @@ export function createMini({ onToggle, onTick, onClose }) {
     nodes.button = doc.querySelector("button");
     nodes.button.addEventListener("click", onToggle);
     pip.addEventListener("pagehide", teardown, { once: true });
-    ticker = pip.setInterval(onTick, 500);
-    last = null;
-    update(view);
+    update(initial);
+
+    // Frame loop owned by the mini window. A backup interval covers the
+    // rare case where frames pause (e.g. the mini window is minimized).
+    const frame = () => {
+      if (!pip) return;
+      paint();
+      const done = view?.running && leftMs() <= 0;
+      nudge(done);
+      raf = pip.requestAnimationFrame(frame);
+    };
+    raf = pip.requestAnimationFrame(frame);
+    ticker = pip.setInterval(() => {
+      paint();
+      nudge(false);
+    }, 1000);
   }
 
-  async function openVideo(view) {
+  async function openVideo(initial) {
     canvas = document.createElement("canvas");
     canvas.width = 600;
     canvas.height = 208;
@@ -153,47 +198,60 @@ export function createMini({ onToggle, onTick, onClose }) {
     video.style.cssText =
       "position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;";
     document.body.append(video);
-    last = null;
-    update(view);
+    update(initial);
     video.srcObject = canvas.captureStream();
     await video.play();
     // The video's own play/pause button pauses and resumes the timer.
     video.addEventListener("pause", () => {
-      if (video && last?.running) onToggle();
+      if (video && view?.running) onToggle();
     });
     video.addEventListener("play", () => {
-      if (video && last && !last.running) onToggle();
+      if (video && view && !view.running) onToggle();
     });
     video.addEventListener("leavepictureinpicture", teardown, { once: true });
-    ticker = window.setInterval(onTick, 500);
+    ticker = window.setInterval(() => {
+      paint();
+      nudge(view?.running && leftMs() <= 0);
+    }, 500);
     await video.requestPictureInPicture();
-    if (!last?.running) video.pause();
+    if (!view?.running) video.pause();
   }
 
-  function update(view) {
+  /** New state from the main page: end time, remainder, label, mode... */
+  function update(next) {
     if (!isOpen()) return;
-    const key = `${view.time}|${view.label}|${view.running}|${view.mode}|${view.frac.toFixed(3)}`;
-    if (key === last?.key) return;
-    last = { ...view, key };
+    view = next;
+    paint();
+  }
+
+  function paint() {
+    if (!view) return;
+    const left = leftMs();
+    const time = fmtClock(left);
+    // Same scale as the big dial: a full ring is 60 minutes.
+    const frac = Math.min(1, left / DIAL_MS);
+    const key = `${time}|${frac.toFixed(3)}|${view.label}|${view.running}|${view.started}|${view.mode}`;
+    if (key === painted) return;
+    painted = key;
     if (pip) {
       const body = pip.document.body;
       body.style.setProperty("--color", view.color);
       body.style.setProperty("--glow", view.glow);
       body.toggleAttribute("data-paused", !view.running && view.started);
-      nodes.ring.style.strokeDashoffset = String(RING * (1 - view.frac));
-      nodes.time.textContent = view.time;
+      nodes.ring.style.strokeDashoffset = String(RING * (1 - frac));
+      nodes.time.textContent = time;
       nodes.label.textContent = view.label;
       nodes.button.innerHTML = view.running ? ICON_PAUSE : ICON_PLAY;
       nodes.button.setAttribute("aria-label", view.running ? "Pause" : "Start");
     } else if (canvas) {
-      draw(view);
+      draw(time, frac);
       // Keep the video's play state in step with the timer.
       if (view.running && video.paused) video.play().catch(() => {});
       else if (!view.running && !video.paused) video.pause();
     }
   }
 
-  function draw(view) {
+  function draw(time, frac) {
     const ctx = canvas.getContext("2d");
     const { width: w, height: h } = canvas;
     ctx.fillStyle = "#0b0b0d";
@@ -213,10 +271,10 @@ export function createMini({ onToggle, onTick, onClose }) {
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.stroke();
-    if (view.frac > 0) {
+    if (frac > 0) {
       ctx.strokeStyle = view.color;
       ctx.beginPath();
-      ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + view.frac * Math.PI * 2);
+      ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
       ctx.stroke();
     }
 
@@ -224,7 +282,7 @@ export function createMini({ onToggle, onTick, onClose }) {
       view.running || !view.started ? "#ece8e1" : "rgba(236,232,225,0.5)";
     ctx.font = "600 64px ui-monospace, Menlo, monospace";
     ctx.textBaseline = "alphabetic";
-    ctx.fillText(view.time, 200, cy + 8);
+    ctx.fillText(time, 200, cy + 8);
     ctx.fillStyle = "rgba(236,232,225,0.6)";
     ctx.font = "italic 28px Georgia, serif";
     const label =
@@ -237,6 +295,8 @@ export function createMini({ onToggle, onTick, onClose }) {
       (pip ?? window).clearInterval(ticker);
       ticker = null;
     }
+    if (raf && pip) pip.cancelAnimationFrame(raf);
+    raf = 0;
     if (video) {
       video.srcObject = null;
       video.remove();
@@ -244,7 +304,8 @@ export function createMini({ onToggle, onTick, onClose }) {
     pip = null;
     video = null;
     canvas = null;
-    last = null;
+    view = null;
+    painted = "";
     onClose();
   }
 

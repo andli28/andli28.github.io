@@ -217,8 +217,10 @@ export function mountFocusTimer(root) {
       label = "name a task first";
     }
     return {
-      time: fmtClock(left),
-      frac: state.setMs > 0 ? Math.min(1, left / state.setMs) : 0,
+      // The mini window counts down from these itself.
+      endAt: state.running ? state.endAt : null,
+      remaining: left,
+      setMs: state.setMs,
       label,
       mode: state.mode,
       running: state.running,
