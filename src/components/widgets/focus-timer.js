@@ -7,11 +7,17 @@
 const STORAGE_KEY = "lab-focus-timer-v2";
 const MIN = 60_000;
 const DIAL_MS = 60 * MIN; // one full turn of the dial
-const BREAK_MIN = { short: 5, long: 15 };
-const LONG_EVERY = 4;
+const DEFAULTS = { focus: 25, short: 5, long: 15, every: 4 };
+const LIMITS = {
+  focus: [1, 180],
+  short: [1, 60],
+  long: [1, 90],
+  every: [2, 12],
+};
 const HISTORY_DAYS = 30;
 const WEDGE_R = 132;
-const SWEEP_MS = 600;
+const SWEEP_PHASE_MS = 600; // a session ending: rare, can take its time
+const SWEEP_SWITCH_MS = 260; // clicking a mode tab: a UI response
 
 // cubic-bezier(0.23, 1, 0.32, 1): the strong ease-out used across the piece.
 function easeOut(t) {
@@ -70,6 +76,12 @@ function wedgePath(ms) {
   return `M0,0L0,${-WEDGE_R}A${WEDGE_R},${WEDGE_R} 0 ${a > Math.PI ? 1 : 0} 1 ${x},${y}Z`;
 }
 
+function clampSetting(key, value) {
+  const [lo, hi] = LIMITS[key];
+  const n = Math.round(Number(value));
+  return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : DEFAULTS[key];
+}
+
 export function mountFocusTimer(root) {
   if (root.dataset.ready) return;
   root.dataset.ready = "1";
@@ -83,23 +95,34 @@ export function mountFocusTimer(root) {
     time: $("time"),
     task: $("task"),
     recent: $("recent"),
-    status: $("status"),
     sound: $("sound"),
+    settingsBtn: $("settings-btn"),
+    panel: $("panel"),
+    cycle: $("cycle"),
     todayWrap: $("today-wrap"),
     dots: $("dots"),
     total: $("total"),
     glow: { focus: $("glow-focus"), break: $("glow-break") },
+    tabs: [...root.querySelectorAll("[data-ft-mode]")],
+    fields: [...root.querySelectorAll("[data-ft-set]")],
   };
 
   const saved = load();
   const t = saved.timer ?? {};
+  const settings = { ...DEFAULTS, ...saved.settings };
+  // Older saves kept only the last focus length.
+  if (!saved.settings && saved.lastFocus) settings.focus = saved.lastFocus;
+  for (const key of Object.keys(DEFAULTS)) {
+    settings[key] = clampSetting(key, settings[key]);
+  }
+
   const state = {
     log: Array.isArray(saved.log) ? saved.log : [],
     sound: saved.sound ?? true,
-    lastFocus: saved.lastFocus ?? 25,
+    settings,
     mode: t.mode === "break" ? "break" : "focus",
     breakKind: t.breakKind === "long" ? "long" : "short",
-    setMs: t.setMs ?? (saved.lastFocus ?? 25) * MIN,
+    setMs: t.setMs ?? settings.focus * MIN,
     remaining: t.remaining ?? null,
     running: Boolean(t.running),
     endAt: t.endAt ?? null,
@@ -115,17 +138,20 @@ export function mountFocusTimer(root) {
   let dragging = false;
   let dragMinutes = 0;
   let lastFrameKey = "";
-  let sweep = null; // { from, to, start, raf } while the wedge sweeps in
+  let sweep = null; // { to, from, start, ms, raf } while the wedge animates
   let shiftTimer = null;
+
+  const tabKey = () => (state.mode === "focus" ? "focus" : state.breakKind);
+  const lengthFor = key => state.settings[key] * MIN;
 
   function save() {
     const cutoff = Date.now() - HISTORY_DAYS * 86_400_000;
     state.log = state.log.filter(s => s.end >= cutoff);
-    const { log, sound, lastFocus, ...timer } = state;
+    const { log, sound, settings, ...timer } = state;
     try {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ log, sound, lastFocus, timer })
+        JSON.stringify({ log, sound, settings, timer })
       );
     } catch {
       // Storage can be unavailable (private mode); the timer still works.
@@ -134,6 +160,9 @@ export function mountFocusTimer(root) {
 
   const remainingMs = () =>
     state.running ? state.endAt - Date.now() : state.remaining;
+
+  const inProgress = () =>
+    state.running || (state.startedAt != null && state.remaining > 0);
 
   // ---- Sound -------------------------------------------------------------
 
@@ -192,6 +221,17 @@ export function mountFocusTimer(root) {
     stopTicking();
   }
 
+  // Switch to a tab's mode and load its length (not started).
+  function goTo(key) {
+    if (key === "focus") {
+      state.mode = "focus";
+    } else {
+      state.mode = "break";
+      state.breakKind = key;
+    }
+    setLength(lengthFor(key));
+  }
+
   function needTask() {
     root.classList.add("needs-task");
     el.task.focus();
@@ -231,55 +271,23 @@ export function mountFocusTimer(root) {
   function complete({ quiet = false } = {}) {
     const end = state.endAt ?? Date.now();
     if (state.mode === "focus") {
-      const minutes = Math.max(1, Math.round(state.setMs / MIN));
       state.log.push({
         task: state.task || "untitled",
         start: state.startedAt ?? end - state.setMs,
         end,
-        minutes,
+        minutes: Math.max(1, Math.round(state.setMs / MIN)),
       });
-      state.lastFocus = minutes;
       state.done += 1;
-      state.mode = "break";
       el.task.value = "";
-      state.breakKind = state.done % LONG_EVERY === 0 ? "long" : "short";
-      setLength(BREAK_MIN[state.breakKind] * MIN);
+      goTo(state.done % state.settings.every === 0 ? "long" : "short");
     } else {
       if (state.breakKind === "long") state.done = 0;
-      state.mode = "focus";
-      setLength(state.lastFocus * MIN);
+      goTo("focus");
     }
     if (!quiet) chime();
     save();
     render();
-    if (!quiet) sweepIn(state.setMs);
-  }
-
-  // Sweep the wedge from empty up to the new length when a phase ends.
-  function sweepIn(to) {
-    cancelSweep();
-    if (prefersReducedMotion()) return;
-    sweep = { to, start: performance.now(), raf: 0 };
-    const frame = now => {
-      if (!sweep) return;
-      const p = Math.min(1, (now - sweep.start) / SWEEP_MS);
-      drawDial(sweep.to * easeOut(p));
-      if (p < 1) sweep.raf = requestAnimationFrame(frame);
-      else {
-        sweep = null;
-        lastFrameKey = "";
-        renderClock();
-      }
-    };
-    drawDial(0);
-    sweep.raf = requestAnimationFrame(frame);
-  }
-
-  function cancelSweep() {
-    if (!sweep) return;
-    cancelAnimationFrame(sweep.raf);
-    sweep = null;
-    lastFrameKey = "";
+    if (!quiet) animateWedge(0, state.setMs, SWEEP_PHASE_MS);
   }
 
   function tick() {
@@ -295,6 +303,35 @@ export function mountFocusTimer(root) {
   function stopTicking() {
     if (interval) clearInterval(interval);
     interval = null;
+  }
+
+  // ---- Wedge animation ---------------------------------------------------
+
+  function animateWedge(from, to, ms) {
+    cancelSweep();
+    if (prefersReducedMotion() || from === to) return;
+    sweep = { from, to, ms, start: performance.now(), raf: 0 };
+    const frame = now => {
+      if (!sweep) return;
+      const p = Math.min(1, (now - sweep.start) / sweep.ms);
+      drawDial(sweep.from + (sweep.to - sweep.from) * easeOut(p));
+      if (p < 1) {
+        sweep.raf = requestAnimationFrame(frame);
+      } else {
+        sweep = null;
+        lastFrameKey = "";
+        renderClock();
+      }
+    };
+    drawDial(from);
+    sweep.raf = requestAnimationFrame(frame);
+  }
+
+  function cancelSweep() {
+    if (!sweep) return;
+    cancelAnimationFrame(sweep.raf);
+    sweep = null;
+    lastFrameKey = "";
   }
 
   // ---- Dial dragging -----------------------------------------------------
@@ -313,14 +350,16 @@ export function mountFocusTimer(root) {
   }
 
   el.dial.addEventListener("pointerdown", e => {
-    if (e.button !== 0 || e.target.closest("[data-ft='hub']") || dragging)
+    if (e.button !== 0 || e.target.closest("[data-ft='hub']") || dragging) {
       return;
+    }
     dragging = true;
     cancelSweep();
+    closePanel();
     el.dial.setPointerCapture(e.pointerId);
     el.dial.classList.add("is-dragging");
     ensureAudio();
-    dragMinutes = Math.round(remainingMs() / MIN);
+    dragMinutes = Math.min(60, Math.round(remainingMs() / MIN));
     const m = minutesAt(e);
     dragMinutes = m;
     setLength(m * MIN);
@@ -342,14 +381,91 @@ export function mountFocusTimer(root) {
     if (!dragging) return;
     dragging = false;
     el.dial.classList.remove("is-dragging");
-    if (state.mode === "focus" && state.setMs > 0)
-      state.lastFocus = dragMinutes;
+    // The dialed length becomes this mode's length from now on.
+    if (state.setMs > 0) state.settings[tabKey()] = dragMinutes;
     save();
     if (state.setMs > 0) tryStart();
     else render();
   };
   el.dial.addEventListener("pointerup", endDrag);
   el.dial.addEventListener("pointercancel", endDrag);
+
+  // ---- Mode tabs ---------------------------------------------------------
+
+  for (const tab of el.tabs) {
+    tab.addEventListener("click", () => {
+      const key = tab.dataset.ftMode;
+      if (key === tabKey() && !inProgress()) return;
+      if (
+        inProgress() &&
+        !window.confirm("Switch modes? The current timer will be reset.")
+      ) {
+        return;
+      }
+      const from = Math.max(0, remainingMs());
+      goTo(key);
+      root.classList.remove("needs-task");
+      save();
+      render();
+      animateWedge(from, state.setMs, SWEEP_SWITCH_MS);
+    });
+  }
+
+  // ---- Settings panel ----------------------------------------------------
+
+  function openPanel() {
+    el.panel.dataset.open = "true";
+    el.panel.inert = false;
+    el.settingsBtn.setAttribute("aria-expanded", "true");
+    el.fields[0]?.focus({ preventScroll: true });
+  }
+
+  function closePanel({ returnFocus = false } = {}) {
+    if (el.panel.dataset.open !== "true") return;
+    el.panel.dataset.open = "false";
+    el.panel.inert = true;
+    el.settingsBtn.setAttribute("aria-expanded", "false");
+    if (returnFocus) el.settingsBtn.focus();
+  }
+
+  el.settingsBtn.addEventListener("click", () => {
+    if (el.panel.dataset.open === "true") closePanel();
+    else openPanel();
+  });
+
+  el.panel.addEventListener("keydown", e => {
+    if (e.key === "Escape") closePanel({ returnFocus: true });
+  });
+
+  document.addEventListener("pointerdown", onOutside);
+  function onOutside(e) {
+    if (
+      el.panel.dataset.open === "true" &&
+      !el.panel.contains(e.target) &&
+      !el.settingsBtn.contains(e.target)
+    ) {
+      closePanel();
+    }
+  }
+
+  for (const field of el.fields) {
+    field.addEventListener("change", () => {
+      const key = field.dataset.ftSet;
+      state.settings[key] = clampSetting(key, field.value);
+      field.value = String(state.settings[key]);
+      // A new length applies right away if that mode is loaded and idle.
+      if (key === tabKey() && !inProgress()) {
+        const from = state.remaining;
+        setLength(lengthFor(key));
+        animateWedge(Math.min(from, DIAL_MS), state.setMs, SWEEP_SWITCH_MS);
+      }
+      save();
+      render();
+    });
+    field.addEventListener("keydown", e => {
+      if (e.key === "Enter") field.blur();
+    });
+  }
 
   // ---- Other events ------------------------------------------------------
 
@@ -400,6 +516,7 @@ export function mountFocusTimer(root) {
       cancelSweep();
       clearTimeout(shiftTimer);
       document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onOutside);
       document.title = pageTitle;
     },
     { once: true }
@@ -419,9 +536,7 @@ export function mountFocusTimer(root) {
     const value = state.running ? 0.2 + 0.8 * frac : 0.6;
     const active = state.mode === "break" ? "break" : "focus";
     for (const [mode, layer] of Object.entries(el.glow)) {
-      if (shift) {
-        layer.classList.add("is-shifting");
-      }
+      if (shift) layer.classList.add("is-shifting");
       layer.style.opacity = mode === active ? value.toFixed(3) : "0";
     }
     if (shift) {
@@ -485,22 +600,43 @@ export function mountFocusTimer(root) {
   }
 
   function render() {
-    const paused =
-      !state.running && state.startedAt != null && state.remaining > 0;
+    const paused = !state.running && inProgress();
     root.dataset.mode = state.mode;
     root.dataset.state = state.running ? "running" : paused ? "paused" : "idle";
 
-    const label =
-      state.mode === "focus"
-        ? `focus · ${(state.done % LONG_EVERY) + 1} of ${LONG_EVERY}`
-        : `${state.breakKind} break`;
-    el.status.textContent = paused ? `${label} · paused` : label;
-    el.hub.setAttribute("aria-label", state.running ? "Pause" : "Start");
+    const active = tabKey();
+    for (const tab of el.tabs) {
+      tab.setAttribute("aria-pressed", String(tab.dataset.ftMode === active));
+    }
 
+    // One dot per focus session in the current cycle, filled when done.
+    const every = state.settings.every;
+    const inCycle = state.done % every;
+    const filled =
+      state.mode === "break" && state.breakKind === "long" ? every : inCycle;
+    el.cycle.replaceChildren(
+      ...Array.from({ length: every }, (_, i) => {
+        const dot = document.createElement("i");
+        if (i < filled) dot.className = "is-done";
+        return dot;
+      })
+    );
+    el.cycle.setAttribute(
+      "aria-label",
+      `${filled} of ${every} focus sessions before a long break`
+    );
+
+    el.hub.setAttribute("aria-label", state.running ? "Pause" : "Start");
     el.sound.textContent = `sound: ${state.sound ? "on" : "off"}`;
     el.sound.setAttribute("aria-pressed", String(state.sound));
 
-    const locked = state.mode === "focus" && (state.running || paused);
+    for (const field of el.fields) {
+      if (document.activeElement !== field) {
+        field.value = String(state.settings[field.dataset.ftSet]);
+      }
+    }
+
+    const locked = state.mode === "focus" && inProgress();
     el.task.readOnly = locked;
     if (locked || (state.mode === "focus" && !el.task.value)) {
       el.task.value = state.task;
@@ -517,5 +653,6 @@ export function mountFocusTimer(root) {
   // A session that ended while the page was closed is logged without a chime.
   if (state.running && remainingMs() <= 0) complete({ quiet: true });
   if (state.running) startTicking();
+  el.panel.inert = true;
   render();
 }
