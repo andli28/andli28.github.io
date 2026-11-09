@@ -182,7 +182,7 @@ export function createMini({ onToggle, onTick, onClose }) {
       height: 104,
     });
     const doc = pip.document;
-    doc.title = "Focus";
+    doc.title = "Pomodoro Timer";
     const style = doc.createElement("style");
     style.textContent = MINI_CSS;
     doc.head.append(style);
