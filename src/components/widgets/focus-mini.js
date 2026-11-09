@@ -6,8 +6,9 @@
 // shown as a picture-in-picture video; its play/pause button drives the
 // timer.
 
+import { COLORS, DIAL_MS, fmtClock } from "./focus-shared.js";
+
 const RING = 2 * Math.PI * 30;
-const DIAL_MS = 60 * 60_000;
 
 const hasDocumentPip = () =>
   typeof window !== "undefined" && "documentPictureInPicture" in window;
@@ -35,14 +36,25 @@ const MINI_CSS = `
     user-select: none;
     overflow: hidden;
   }
-  body::before {
+  /* One glow layer per mode, crossfaded (gradients can't be animated). */
+  body::before,
+  body::after {
     position: fixed;
     inset: 0;
-    background: radial-gradient(circle at 20% 50%, var(--glow) 0, transparent 60%);
     content: "";
     pointer-events: none;
-    transition: background 300ms ease;
+    transition: opacity 300ms ease;
   }
+  body::before {
+    background: radial-gradient(circle at 20% 50%, ${COLORS.focus.glow} 0, transparent 60%);
+  }
+  body::after {
+    background: radial-gradient(circle at 20% 50%, ${COLORS.break.glow} 0, transparent 60%);
+    opacity: 0;
+  }
+  body[data-mode="break"]::before { opacity: 0; }
+  body[data-mode="break"]::after { opacity: 1; }
+  body > * { position: relative; z-index: 1; }
   svg { width: 64px; height: 64px; transform: rotate(-90deg); }
   .track { fill: none; stroke: rgb(236 232 225 / 0.1); stroke-width: 6; }
   .ring {
@@ -82,7 +94,12 @@ const MINI_CSS = `
     cursor: pointer;
     transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
   }
-  button:active { transform: scale(0.94); }
+  /* Pointer presses only, so keyboard activation stays instant. */
+  button[data-pressed] { transform: scale(0.97); }
+  @media (prefers-reduced-motion: reduce) {
+    button { transition: none; }
+    button[data-pressed] { transform: none; }
+  }
   button svg { width: 14px; height: 14px; transform: none; }
 `;
 
@@ -90,13 +107,6 @@ const ICON_PAUSE =
   '<svg viewBox="0 0 14 14" aria-hidden="true"><rect x="2.5" y="2" width="3" height="10" rx="1" fill="currentColor"/><rect x="8.5" y="2" width="3" height="10" rx="1" fill="currentColor"/></svg>';
 const ICON_PLAY =
   '<svg viewBox="0 0 14 14" aria-hidden="true"><path d="M4 2.2v9.6a.6.6 0 0 0 .9.5l7.6-4.8a.6.6 0 0 0 0-1L4.9 1.7a.6.6 0 0 0-.9.5Z" fill="currentColor"/></svg>';
-
-function fmtClock(ms) {
-  const total = Math.max(0, Math.ceil(ms / 1000));
-  const m = Math.floor(total / 60);
-  const sec = total % 60;
-  return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-}
 
 /**
  * The mini window keeps its own time: the main page sends the session's
@@ -118,9 +128,19 @@ export function createMini({ onToggle, onTick, onClose }) {
   let view = null; // latest state from the main page
   let painted = "";
   let lastNudge = 0;
+  let opening = false;
   const nodes = {};
 
   const isOpen = () => Boolean(pip || video);
+
+  // True while the person is interacting with the mini window itself.
+  const hasFocus = () => {
+    try {
+      return Boolean(pip?.document.hasFocus());
+    } catch {
+      return false;
+    }
+  };
 
   // Time left, computed here from the end time rather than sent each second.
   function leftMs() {
@@ -139,9 +159,21 @@ export function createMini({ onToggle, onTick, onClose }) {
   }
 
   async function open(initial) {
-    if (isOpen()) return;
-    if (hasDocumentPip()) await openDocument(initial);
-    else if (hasVideoPip()) await openVideo(initial);
+    // `opening` covers the awaits below, so a double click opens one window.
+    if (isOpen() || opening) return;
+    opening = true;
+    try {
+      if (hasDocumentPip()) await openDocument(initial);
+      else if (hasVideoPip()) await openVideo(initial);
+    } catch (err) {
+      // Leave nothing half-open (e.g. Safari refusing picture-in-picture).
+      const w = pip;
+      if (isOpen()) teardown();
+      if (w && !w.closed) w.close();
+      throw err;
+    } finally {
+      opening = false;
+    }
   }
 
   async function openDocument(initial) {
@@ -169,6 +201,14 @@ export function createMini({ onToggle, onTick, onClose }) {
     nodes.label = doc.querySelector(".label");
     nodes.button = doc.querySelector("button");
     nodes.button.addEventListener("click", onToggle);
+    nodes.button.addEventListener("pointerdown", () => {
+      nodes.button.dataset.pressed = "";
+    });
+    for (const type of ["pointerup", "pointercancel", "pointerleave"]) {
+      nodes.button.addEventListener(type, () => {
+        delete nodes.button.dataset.pressed;
+      });
+    }
     pip.addEventListener("pagehide", teardown, { once: true });
     update(initial);
 
@@ -236,7 +276,7 @@ export function createMini({ onToggle, onTick, onClose }) {
     if (pip) {
       const body = pip.document.body;
       body.style.setProperty("--color", view.color);
-      body.style.setProperty("--glow", view.glow);
+      body.dataset.mode = view.mode;
       body.toggleAttribute("data-paused", !view.running && view.started);
       nodes.ring.style.strokeDashoffset = String(RING * (1 - frac));
       nodes.time.textContent = time;
@@ -316,5 +356,5 @@ export function createMini({ onToggle, onTick, onClose }) {
     }
   }
 
-  return { open, close, update, isOpen };
+  return { open, close, update, isOpen, hasFocus };
 }

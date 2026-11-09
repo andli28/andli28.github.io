@@ -8,10 +8,9 @@
 
 import { blockAt, buildPlan, describePlan } from "./focus-plan.js";
 import { createMini, miniSupported } from "./focus-mini.js";
+import { COLORS, DIAL_MS, MIN, fmtClock } from "./focus-shared.js";
 
 const STORAGE_KEY = "lab-focus-timer-v2";
-const MIN = 60_000;
-const DIAL_MS = 60 * MIN; // one full turn of the dial
 const DEFAULTS = { focus: 25, short: 5, long: 15, every: 4 };
 const LIMITS = {
   focus: [1, 180],
@@ -61,13 +60,6 @@ function load() {
 
 const dayKey = ts => new Date(ts).toDateString();
 
-function fmtClock(ms) {
-  const total = Math.max(0, Math.ceil(ms / 1000));
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
 function fmtMinutes(min) {
   if (min < 60) return `${min}m`;
   const h = Math.floor(min / 60);
@@ -98,14 +90,16 @@ function clampSetting(key, value) {
   return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : DEFAULTS[key];
 }
 
-// "HH:MM" from an <input type="time"> to the next such clock time (today,
-// or tomorrow if it has already passed).
+// "HH:MM" from an <input type="time"> to a clock time: today, or tomorrow
+// if that time is more than 12 hours gone (a late-night plan past midnight).
+// A time that passed recently stays in the past, so it can be reported as
+// such instead of turning into a 23-hour plan.
 function nextClockTime(value, now) {
   const [h, m] = value.split(":").map(Number);
   if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
   const d = new Date(now);
   d.setHours(h, m, 0, 0);
-  if (d.getTime() <= now) d.setDate(d.getDate() + 1);
+  if (now - d.getTime() > 12 * 60 * MIN) d.setDate(d.getDate() + 1);
   return d.getTime();
 }
 
@@ -202,6 +196,8 @@ export function mountFocusTimer(root) {
   let shiftTimer = null;
   let toastTimer = null;
   let editingId = null;
+  let stripKey = "";
+  let stripSecond = -1;
 
   const mini = createMini({
     onToggle: () => toggle(),
@@ -225,8 +221,8 @@ export function mountFocusTimer(root) {
       mode: state.mode,
       running: state.running,
       started: inProgress(),
-      color: focus ? "#e8542e" : "#1e9e8f",
-      glow: focus ? "rgba(232,84,46,0.22)" : "rgba(30,158,143,0.22)",
+      color: COLORS[focus ? "focus" : "break"].stroke,
+      glow: COLORS[focus ? "focus" : "break"].glow,
     };
   }
 
@@ -315,8 +311,10 @@ export function mountFocusTimer(root) {
 
     if (
       state.notify &&
-      // Hidden tab, minimized window, or another app in front.
+      // Hidden tab, minimized window, or another app in front (but not
+      // while you're using the mini window, which shows the change itself).
       (document.hidden || !document.hasFocus()) &&
+      !mini.hasFocus() &&
       "Notification" in window &&
       Notification.permission === "granted"
     ) {
@@ -369,8 +367,10 @@ export function mountFocusTimer(root) {
     setLength(lengthFor(key));
   }
 
-  function logFocus(task, start, end) {
-    const minutes = Math.round((end - start) / MIN);
+  // `ms` is the focus time itself (the session or block length), so time
+  // spent paused isn't counted.
+  function logFocus(task, start, end, ms) {
+    const minutes = Math.round(ms / MIN);
     if (minutes < 1) return;
     state.log.push({ task: task || "untitled", start, end, minutes });
     state.done += 1;
@@ -429,12 +429,19 @@ export function mountFocusTimer(root) {
     const end = state.endAt ?? Date.now();
     let next;
     if (state.mode === "focus") {
-      logFocus(state.task, state.startedAt ?? end - state.setMs, end);
+      logFocus(
+        state.task,
+        state.startedAt ?? end - state.setMs,
+        end,
+        state.setMs
+      );
       el.task.value = "";
       next = state.done % state.settings.every === 0 ? "long" : "short";
     } else {
       if (state.breakKind === "long") state.done = 0;
       next = "focus";
+      // Offer the last task again; it's still editable before starting.
+      el.task.value = state.task;
     }
     goTo(next);
     if (!quiet) {
@@ -484,7 +491,7 @@ export function mountFocusTimer(root) {
 
     if (now >= plan.end) {
       if (prev?.kind === "focus" && !resume) {
-        logFocus(prev.label, prev.start, prev.end);
+        logFocus(prev.label, prev.start, prev.end, prev.end - prev.start);
       }
       state.plan = null;
       state.planIdx = null;
@@ -509,7 +516,7 @@ export function mountFocusTimer(root) {
 
     const changed = idx !== state.planIdx;
     if (changed && prev?.kind === "focus" && !resume && prev.end <= now) {
-      logFocus(prev.label, prev.start, prev.end);
+      logFocus(prev.label, prev.start, prev.end, prev.end - prev.start);
     }
 
     const block = blocks[idx];
@@ -521,6 +528,7 @@ export function mountFocusTimer(root) {
     } else {
       state.mode = "break";
       state.breakKind = block.kind;
+      el.task.value = "";
     }
     state.setMs = block.end - block.start;
     state.startedAt = block.start;
@@ -606,6 +614,10 @@ export function mountFocusTimer(root) {
     state.plan = null;
     state.planIdx = null;
     state.planPaused = false;
+    // "wrap up" only exists inside a plan.
+    if (state.mode === "break" && state.breakKind === "wrap") {
+      state.breakKind = "short";
+    }
     closeEditor();
     return true;
   }
@@ -613,6 +625,11 @@ export function mountFocusTimer(root) {
   function planPreview() {
     const now = Date.now();
     const end = nextClockTime(el.planEnd.value, now);
+    if (end && end <= now) {
+      el.planSummary.textContent = "that time has already passed";
+      el.planGo.disabled = true;
+      return null;
+    }
     if (!end || end - now < MIN_PLAN_MS) {
       el.planSummary.textContent = "pick a time at least 10 minutes away";
       el.planGo.disabled = true;
@@ -660,16 +677,17 @@ export function mountFocusTimer(root) {
 
   // ---- Dial dragging -----------------------------------------------------
 
-  function minutesAt(e) {
+  function minutesAt(e, { guard = true } = {}) {
     const r = el.dial.getBoundingClientRect();
     const dx = e.clientX - (r.left + r.width / 2);
     const dy = e.clientY - (r.top + r.height / 2);
     let a = Math.atan2(dx, -dy);
     if (a < 0) a += Math.PI * 2;
     let m = Math.round((a / (Math.PI * 2)) * 60);
-    // Don't wrap around past 0 or 60: hold at the end you came from.
-    if (dragMinutes >= 45 && m <= 15) m = 60;
-    else if (dragMinutes <= 15 && m >= 45) m = 0;
+    // While dragging, don't wrap around past 0 or 60: hold at the end you
+    // came from. (Not on the first press, which goes where you pressed.)
+    if (guard && dragMinutes >= 45 && m <= 15) m = 60;
+    else if (guard && dragMinutes <= 15 && m >= 45) m = 0;
     return m;
   }
 
@@ -677,16 +695,22 @@ export function mountFocusTimer(root) {
     if (e.button !== 0 || e.target.closest("[data-ft='hub']") || dragging) {
       return;
     }
-    if (!leavePlanOk()) return;
-    if (state.mode === "break" && state.breakKind === "wrap") goTo("short");
+    if (state.plan) {
+      // The confirm dialog swallows this press, so don't start a drag from
+      // it; once the plan is gone, the next press sets the time.
+      if (leavePlanOk()) {
+        save();
+        render();
+      }
+      return;
+    }
     dragging = true;
     cancelSweep();
     closePanels();
     el.dial.setPointerCapture(e.pointerId);
     el.dial.classList.add("is-dragging");
     ensureAudio();
-    dragMinutes = Math.min(60, Math.round(remainingMs() / MIN));
-    const m = minutesAt(e);
+    const m = minutesAt(e, { guard: false });
     dragMinutes = m;
     setLength(m * MIN);
     root.classList.remove("needs-task");
@@ -744,6 +768,11 @@ export function mountFocusTimer(root) {
   function openPanel(name) {
     closePanels();
     const { btn, panel } = el.panels[name];
+    // Grow out of the pill that opened it. offsetLeft is the panel's layout
+    // position, unaffected by its closed-state scale.
+    const b = btn.getBoundingClientRect();
+    const panelLeft = root.getBoundingClientRect().left + panel.offsetLeft;
+    panel.style.transformOrigin = `${Math.round(b.left + b.width / 2 - panelLeft)}px 0`;
     panel.dataset.open = "true";
     panel.inert = false;
     btn.setAttribute("aria-expanded", "true");
@@ -752,9 +781,8 @@ export function mountFocusTimer(root) {
         // Default: two hours from now, rounded up to a half hour.
         const d = new Date(Date.now() + 2 * 60 * MIN);
         const m = d.getMinutes();
-        if (m > 0 || d.getSeconds() > 0) {
-          d.setMinutes(m <= 30 ? 30 : 60, 0, 0);
-        }
+        if (m > 0) d.setMinutes(m <= 30 ? 30 : 60);
+        d.setSeconds(0, 0);
         el.planEnd.value = toTimeValue(d.getTime());
       }
       planPreview();
@@ -900,6 +928,7 @@ export function mountFocusTimer(root) {
   // ---- Block labels ------------------------------------------------------
 
   function openEditor(block) {
+    if (editingId && editingId !== block.id) commitLabel();
     editingId = block.id;
     el.editorTime.textContent = `${fmtTime(block.start)} – ${fmtTime(block.end)}`;
     el.editorInput.value = block.label;
@@ -937,16 +966,37 @@ export function mountFocusTimer(root) {
     if (e.key === "Enter") commitLabel();
     else if (e.key === "Escape") closeEditor();
   });
+  // Tabbing or clicking away keeps what was typed.
+  el.editorInput.addEventListener("blur", () => {
+    if (editingId) commitLabel();
+  });
 
   // ---- Other events ------------------------------------------------------
 
   el.hub.addEventListener("click", toggle);
-  el.hub.addEventListener("pointerdown", () => {
-    el.hub.dataset.pressed = "";
+
+  // Press feedback (a small scale) is set on pointer presses only, so
+  // keyboard activation stays instant.
+  const PRESSABLE =
+    "[data-ft='hub'], .ft-recent button, .ft-plan-quick button, .ft-plan-go";
+  root.addEventListener("pointerdown", e => {
+    const target = e.target.closest(PRESSABLE);
+    if (target) target.dataset.pressed = "";
   });
-  for (const type of ["pointerup", "pointercancel", "pointerleave"]) {
-    el.hub.addEventListener(type, () => delete el.hub.dataset.pressed);
+  const release = () => {
+    for (const node of root.querySelectorAll("[data-pressed]")) {
+      delete node.dataset.pressed;
+    }
+  };
+  for (const type of ["pointerup", "pointercancel"]) {
+    document.addEventListener(type, release);
   }
+  root.addEventListener("pointerout", e => {
+    const target = e.target.closest?.("[data-pressed]");
+    if (target && !target.contains(e.relatedTarget)) {
+      delete target.dataset.pressed;
+    }
+  });
 
   el.mini.hidden = !miniSupported();
   el.mini.addEventListener("click", async () => {
@@ -1025,6 +1075,8 @@ export function mountFocusTimer(root) {
       mini.close();
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("pointerdown", onOutside);
+      document.removeEventListener("pointerup", release);
+      document.removeEventListener("pointercancel", release);
       document.title = pageTitle;
     },
     { once: true }
@@ -1081,13 +1133,27 @@ export function mountFocusTimer(root) {
     root.classList.toggle("has-plan", Boolean(plan));
     el.strip.hidden = !plan;
     if (!plan) {
+      stripKey = "";
       closeEditor();
       return;
     }
+    el.replan.hidden = !state.planPaused;
+    // Keep the existing block nodes unless the blocks themselves changed:
+    // the past/current fades can play, and a click that lands while a label
+    // is being saved still finds its block.
+    const key = `${plan.start}|${plan.end}|${plan.blocks.map(b => b.id).join(",")}`;
+    if (key === stripKey) {
+      for (const node of el.track.querySelectorAll(".ft-block-focus")) {
+        const b = plan.blocks.find(x => x.id === node.dataset.id);
+        if (b) labelBlock(node, b);
+      }
+      renderStripNow(true);
+      return;
+    }
+    stripKey = key;
     const span = plan.end - plan.start;
     el.stripStart.textContent = fmtTime(plan.start);
     el.stripEnd.textContent = fmtTime(plan.end);
-    el.replan.hidden = !state.planPaused;
     const blocks = plan.blocks.map(b => {
       const node = document.createElement(
         b.kind === "focus" ? "button" : "div"
@@ -1096,31 +1162,39 @@ export function mountFocusTimer(root) {
       node.dataset.id = b.id;
       node.style.left = `${(((b.start - plan.start) / span) * 100).toFixed(3)}%`;
       node.style.width = `${(((b.end - b.start) / span) * 100).toFixed(3)}%`;
-      const when = `${fmtTime(b.start)} – ${fmtTime(b.end)}`;
       if (b.kind === "focus") {
         node.type = "button";
-        node.textContent = b.label;
-        node.title = `${when} · ${b.label || "focus"} · click to label`;
-        node.setAttribute(
-          "aria-label",
-          `${when}, ${b.label || "unlabeled focus block"}. Edit label`
-        );
+        labelBlock(node, b);
         node.addEventListener("click", () => openEditor(b));
       } else {
-        node.title = `${when} · ${KIND_NAME[b.kind]}`;
+        node.title = `${fmtTime(b.start)} – ${fmtTime(b.end)} · ${KIND_NAME[b.kind]}`;
         node.setAttribute("aria-hidden", "true");
       }
       return node;
     });
     el.track.replaceChildren(...blocks, el.now);
-    renderStripNow();
+    renderStripNow(true);
+  }
+
+  function labelBlock(node, b) {
+    const when = `${fmtTime(b.start)} – ${fmtTime(b.end)}`;
+    if (node.textContent !== b.label) node.textContent = b.label;
+    node.title = `${when} · ${b.label || "focus"} · click to label`;
+    node.setAttribute(
+      "aria-label",
+      `${when}, ${b.label || "unlabeled focus block"}. Edit label`
+    );
   }
 
   // Per-second strip update: the now marker and which block is current.
-  function renderStripNow() {
+  function renderStripNow(force = false) {
     const plan = state.plan;
     if (!plan) return;
     const now = Date.now();
+    // At most once a second: one second is a fraction of a pixel here.
+    const second = Math.floor(now / 1000);
+    if (!force && second === stripSecond) return;
+    stripSecond = second;
     const p = Math.min(
       1,
       Math.max(0, (now - plan.start) / (plan.end - plan.start))
@@ -1228,9 +1302,7 @@ export function mountFocusTimer(root) {
 
     const locked = state.mode === "focus" && inProgress();
     el.task.readOnly = locked;
-    if (locked || (state.mode === "focus" && !el.task.value)) {
-      el.task.value = state.task;
-    }
+    if (locked) el.task.value = state.task;
     el.task.placeholder =
       state.mode === "break"
         ? state.breakKind === "wrap"
@@ -1250,7 +1322,10 @@ export function mountFocusTimer(root) {
   el.panels.settings.panel.inert = true;
   el.panels.plan.panel.inert = true;
 
-  if (following()) {
+  if (state.plan && Date.now() >= state.plan.end) {
+    // The plan ended while the page was closed: wrap it up quietly.
+    syncPlan({ fromLoad: true, resume: state.planPaused });
+  } else if (following()) {
     syncPlan({ fromLoad: true });
   } else if (state.running && remainingMs() <= 0) {
     // A session that ended while the page was closed is logged quietly.
@@ -1261,6 +1336,7 @@ export function mountFocusTimer(root) {
 
   // On a desktop, put the caret in an empty task line so it's clearly the
   // place to type. On touch screens this would pop the keyboard, so wait.
+  if (state.mode === "focus" && !inProgress()) el.task.value = state.task;
   if (
     state.mode === "focus" &&
     !inProgress() &&
