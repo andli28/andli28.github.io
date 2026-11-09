@@ -177,11 +177,10 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
         maxlength="60"
         autocomplete="off"
         spellcheck="false"
-        list="ft-recent"
         placeholder="what are you working on?"
       />
-      <datalist id="ft-recent" data-ft="recent"></datalist>
     </label>
+    <div class="ft-recent" data-ft="recent" aria-label="Recent tasks"></div>
   </div>
 
   <div class="ft-today" data-ft="today-wrap" hidden>
@@ -506,6 +505,71 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     opacity: 0.5;
   }
 
+  /* A writing line under the task: the "type here" affordance. */
+  .ft-task {
+    position: relative;
+    display: block;
+    cursor: text;
+  }
+  .ft-task::after {
+    position: absolute;
+    right: 25%;
+    bottom: -0.45rem;
+    left: 25%;
+    height: 1px;
+    background: rgb(236 232 225 / 0.22);
+    content: "";
+    transform: scaleX(0.7);
+    transition:
+      transform 200ms var(--ft-ease-out),
+      background-color 200ms ease;
+  }
+  .ft-task:focus-within::after {
+    background: var(--ft-color);
+    transform: scaleX(1);
+  }
+  .ft.needs-task .ft-task::after {
+    background: var(--ft-hot);
+    transform: scaleX(1);
+  }
+  /* While a session runs the line is a title, not a field. */
+  .ft[data-state="running"] .ft-task::after,
+  .ft[data-state="paused"] .ft-task::after {
+    opacity: 0;
+  }
+
+  .ft-recent {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.4rem;
+    min-height: 1.7rem;
+    max-width: min(86vw, 560px);
+    margin-top: -0.75rem;
+    font-size: 0.75rem;
+  }
+  .ft-recent button {
+    max-width: 14rem;
+    overflow: hidden;
+    padding: 0.25rem 0.65rem;
+    border: 1px solid var(--ft-faint);
+    border-radius: 999px;
+    color: var(--ft-dim);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition:
+      color 150ms ease,
+      border-color 150ms ease,
+      transform 140ms var(--ft-ease-out);
+  }
+  .ft-recent button:active {
+    transform: scale(0.97);
+  }
+  .ft-recent button:focus-visible {
+    outline: 2px solid var(--ft-dim);
+    outline-offset: 2px;
+  }
+
   .ft-task input {
     width: min(86vw, 560px);
     border: 0;
@@ -520,8 +584,11 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     outline: none;
   }
   .ft-task input::placeholder {
-    color: rgb(236 232 225 / 0.28);
+    color: rgb(236 232 225 / 0.4);
     transition: color 200ms ease;
+  }
+  .ft-task input:focus::placeholder {
+    color: rgb(236 232 225 / 0.3);
   }
   .ft-task input[readonly] {
     cursor: default;
@@ -573,9 +640,17 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
   }
 
   @media (hover: hover) and (pointer: fine) {
-    .ft-pill:hover {
+    .ft-pill:hover,
+    .ft-recent button:hover {
       border-color: var(--ft-dim);
       color: var(--ft-ink);
+    }
+    .ft-task:hover input:not([readonly])::placeholder {
+      color: rgb(236 232 225 / 0.6);
+    }
+    .ft-task:hover:not(:focus-within)::after {
+      background: rgb(236 232 225 / 0.4);
+      transform: scaleX(1);
     }
     .ft-tabs button:not([aria-pressed="true"]):hover {
       color: var(--ft-ink);
@@ -585,6 +660,9 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
   @media (prefers-reduced-motion: reduce) {
     .ft-hub {
       transition: none;
+    }
+    .ft-task::after {
+      transition: background-color 200ms ease;
     }
     .ft-hub[data-pressed] {
       transform: translate(-50%, -50%);

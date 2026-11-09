@@ -531,6 +531,7 @@ export function mountFocusTimer(root) {
 
   el.task.addEventListener("input", () => {
     if (el.task.value.trim()) root.classList.remove("needs-task");
+    renderRecent();
   });
   el.task.addEventListener("keydown", e => {
     if (e.key === "Enter") {
@@ -631,15 +632,32 @@ export function mountFocusTimer(root) {
       `Today: ${sessions.length} focus sessions, ${minutes} minutes`
     );
 
-    const recent = [...new Set(state.log.map(s => s.task).reverse())].slice(
-      0,
-      8
-    );
+    renderRecent();
+  }
+
+  // Up to three recent tasks as chips, only while the task line is empty
+  // and ready to be filled in.
+  function renderRecent() {
+    const show =
+      state.mode === "focus" && !inProgress() && !el.task.value.trim();
+    const recent = show
+      ? [...new Set(state.log.map(s => s.task).reverse())]
+          .filter(task => task !== "untitled")
+          .slice(0, 3)
+      : [];
     el.recent.replaceChildren(
       ...recent.map(task => {
-        const opt = document.createElement("option");
-        opt.value = task;
-        return opt;
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.textContent = task;
+        chip.title = task;
+        chip.addEventListener("click", () => {
+          el.task.value = task;
+          root.classList.remove("needs-task");
+          el.task.focus();
+          renderRecent();
+        });
+        return chip;
       })
     );
   }
@@ -700,4 +718,15 @@ export function mountFocusTimer(root) {
   if (state.running) startTicking();
   el.panel.inert = true;
   render();
+
+  // On a desktop, put the caret in an empty task line so it's clearly the
+  // place to type. On touch screens this would pop the keyboard, so wait.
+  if (
+    state.mode === "focus" &&
+    !inProgress() &&
+    !el.task.value &&
+    window.matchMedia("(hover: hover) and (pointer: fine)").matches
+  ) {
+    el.task.focus({ preventScroll: true });
+  }
 }
