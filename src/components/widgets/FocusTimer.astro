@@ -103,6 +103,10 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
       />
       <small>sessions</small>
     </label>
+    <div class="ft-panel-actions">
+      <button type="button" data-ft="reset-today">reset today</button>
+      <button type="button" data-ft="clear-history">clear history</button>
+    </div>
   </div>
 
   <div class="ft-stage">
@@ -335,6 +339,30 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
   .ft-panel small {
     color: rgb(236 232 225 / 0.3);
     font-size: 0.75rem;
+  }
+  .ft-panel-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 0.35rem;
+    padding-top: 0.7rem;
+    border-top: 1px solid var(--ft-faint);
+  }
+  .ft-panel-actions button {
+    color: var(--ft-dim);
+    text-decoration: underline;
+    text-decoration-color: var(--ft-faint);
+    text-underline-offset: 3px;
+    transition: color 150ms ease;
+  }
+  .ft-panel-actions button:focus-visible {
+    outline: 2px solid var(--ft-dim);
+    outline-offset: 2px;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .ft-panel-actions button:hover {
+      color: var(--ft-ink);
+    }
   }
 
   .ft-stage {

@@ -105,6 +105,8 @@ export function mountFocusTimer(root) {
     glow: { focus: $("glow-focus"), break: $("glow-break") },
     tabs: [...root.querySelectorAll("[data-ft-mode]")],
     fields: [...root.querySelectorAll("[data-ft-set]")],
+    resetToday: $("reset-today"),
+    clearHistory: $("clear-history"),
   };
 
   const saved = load();
@@ -129,8 +131,11 @@ export function mountFocusTimer(root) {
     startedAt: t.startedAt ?? null,
     task: t.task ?? "",
     done: t.done ?? 0,
+    cycleDay: t.cycleDay ?? null, // the day `done` was last counted
   };
   if (state.remaining == null) state.remaining = state.setMs;
+  // A new day starts a new cycle toward the long break.
+  if (state.cycleDay !== dayKey(Date.now())) state.done = 0;
 
   const pageTitle = document.title;
   let interval = null;
@@ -278,6 +283,7 @@ export function mountFocusTimer(root) {
         minutes: Math.max(1, Math.round(state.setMs / MIN)),
       });
       state.done += 1;
+      state.cycleDay = dayKey(end);
       el.task.value = "";
       goTo(state.done % state.settings.every === 0 ? "long" : "short");
     } else {
@@ -447,6 +453,45 @@ export function mountFocusTimer(root) {
       closePanel();
     }
   }
+
+  // Fresh start: back to an idle focus timer with an empty cycle.
+  function freshStart() {
+    cancelSweep();
+    state.done = 0;
+    state.task = "";
+    el.task.value = "";
+    root.classList.remove("needs-task");
+    const from = Math.max(0, remainingMs());
+    goTo("focus");
+    save();
+    render();
+    animateWedge(Math.min(from, DIAL_MS), state.setMs, SWEEP_SWITCH_MS);
+  }
+
+  el.resetToday.addEventListener("click", () => {
+    if (
+      !window.confirm(
+        "Reset today? This clears today's sessions, the cycle and the timer. Settings stay."
+      )
+    ) {
+      return;
+    }
+    const today = dayKey(Date.now());
+    state.log = state.log.filter(s => dayKey(s.end) !== today);
+    freshStart();
+  });
+
+  el.clearHistory.addEventListener("click", () => {
+    if (
+      !window.confirm(
+        "Clear all history? This deletes every saved session and resets the timer. Settings stay."
+      )
+    ) {
+      return;
+    }
+    state.log = [];
+    freshStart();
+  });
 
   for (const field of el.fields) {
     field.addEventListener("change", () => {
