@@ -2,10 +2,10 @@ import type { CollectionEntry } from "astro:content";
 import { postFilter } from "./postFilter";
 
 /**
- * Playground entries that should be shown (same draft/scheduling rules as
+ * Lab entries that should be shown (same draft/scheduling rules as
  * posts), newest first by `modDatetime` or `pubDatetime`.
  */
-export function getSortedPlayground(entries: CollectionEntry<"playground">[]) {
+export function getSortedLab(entries: CollectionEntry<"lab">[]) {
   return entries
     .filter(postFilter)
     .sort(
@@ -16,10 +16,10 @@ export function getSortedPlayground(entries: CollectionEntry<"playground">[]) {
 }
 
 /**
- * URL slug for a playground entry. Folders starting with `_` (like
+ * URL slug for a lab entry. Folders starting with `_` (like
  * `_examples`) are left out of the URL, matching how posts work.
  */
-export function getPlaygroundSlug(id: string) {
+export function getLabSlug(id: string) {
   return id
     .split("/")
     .filter(segment => !segment.startsWith("_"))

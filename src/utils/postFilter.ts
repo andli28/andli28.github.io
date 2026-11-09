@@ -8,7 +8,7 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 
 /**
- * Determines whether a post (or playground entry) is eligible to be listed/rendered.
+ * Determines whether a post (or lab entry) is eligible to be listed/rendered.
  *
  * - Drafts are shown in dev (so you can preview them) and excluded from builds
  * - In production, excludes posts whose `pubDatetime` falls on a later calendar

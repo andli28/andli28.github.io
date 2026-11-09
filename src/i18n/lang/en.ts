@@ -5,7 +5,7 @@ export default {
     home: "Home",
     posts: "Posts",
     tags: "Tags",
-    playground: "Playground",
+    lab: "Lab",
     about: "About",
     resume: "Resume",
     archives: "Archives",
@@ -49,9 +49,9 @@ export default {
     postsTitle: "Posts",
     postsDesc: "All the articles I've posted.",
 
-    playgroundTitle: "Playground",
-    playgroundDesc: "Interactive demos and games to play with.",
-    playgroundEmpty: "Nothing here yet. Check back soon.",
+    labTitle: "Lab",
+    labDesc: "Interactive demos and games to play with.",
+    labEmpty: "Nothing here yet. Check back soon.",
 
     archivesTitle: "Archives",
     archivesDesc: "All the articles I've archived.",

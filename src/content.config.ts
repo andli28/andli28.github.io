@@ -28,10 +28,10 @@ const posts = defineCollection({
     }),
 });
 
-const playground = defineCollection({
+const lab = defineCollection({
   loader: glob({
     pattern: "**/[^_]*.{md,mdx}",
-    base: "./src/content/playground",
+    base: "./src/content/lab",
   }),
   schema: ({ image }) =>
     z.object({
@@ -59,4 +59,4 @@ const pages = defineCollection({
   }),
 });
 
-export const collections = { posts, playground, pages };
+export const collections = { posts, lab, pages };
