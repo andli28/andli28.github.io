@@ -42,6 +42,9 @@ const lab = defineCollection({
       draft: z.boolean().optional(),
       // Render as a full-screen piece, without the site header and footer.
       fullscreen: z.boolean().default(false),
+      // Small preview shown next to the entry on the Lab list. A wide
+      // screenshot works best (it's cropped to 5:3); keep it next to the entry.
+      thumbnail: image().optional(),
       ogImage: image().or(z.string()).optional(),
       canonicalURL: z.string().optional(),
       timezone: z

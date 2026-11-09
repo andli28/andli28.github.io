@@ -7,6 +7,8 @@ draft: true
 
 Lab entries are `.mdx` files in `src/content/lab/`. Write a little intro, then drop in an interactive component from `src/components/widgets/` (or inline HTML and a `<script>` like below).
 
+To give an entry a preview on the Lab list, take a screenshot, save it in `src/assets/lab/`, and add `thumbnail: ../../assets/lab/<name>.jpg` to the frontmatter. It's shown small and cropped to 5:3, so crop close to the interesting part.
+
 <div class="not-prose my-6 flex items-center gap-4">
   <button id="demo-counter" type="button" class="border-border rounded border px-4 py-2 font-medium">
     Clicked 0 times
