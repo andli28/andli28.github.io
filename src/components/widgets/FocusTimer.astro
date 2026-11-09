@@ -36,7 +36,18 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
   <div class="ft-glow ft-glow-break" data-ft="glow-break" aria-hidden="true">
   </div>
 
+  <p class="ft-toast" data-ft="toast" role="status" aria-live="polite"></p>
+
   <div class="ft-top">
+    <button
+      type="button"
+      class="ft-pill"
+      data-ft="plan-btn"
+      aria-expanded="false"
+      aria-controls="ft-plan-panel"
+    >
+      plan
+    </button>
     <button
       type="button"
       class="ft-pill"
@@ -46,9 +57,36 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     >
       settings
     </button>
-    <button type="button" class="ft-pill" data-ft="sound" aria-pressed="true">
-      sound: on
+    <button type="button" class="ft-pill" data-ft="sound" aria-pressed="false">
+      sound: off
     </button>
+  </div>
+
+  <div
+    class="ft-panel ft-plan-panel"
+    id="ft-plan-panel"
+    data-ft="plan-panel"
+    data-open="false"
+    role="dialog"
+    aria-label="Plan your time"
+  >
+    <label class="ft-plan-until">
+      <span>free until</span>
+      <input type="time" data-ft="plan-end" />
+    </label>
+    <div class="ft-plan-quick">
+      <button type="button" data-plan-add="30">+30m</button>
+      <button type="button" data-plan-add="60">+1h</button>
+      <button type="button" data-plan-add="120">+2h</button>
+      <button type="button" data-plan-add="180">+3h</button>
+    </div>
+    <p class="ft-plan-summary" data-ft="plan-summary"></p>
+    <div class="ft-panel-actions">
+      <button type="button" data-ft="plan-clear" hidden>clear plan</button>
+      <button type="button" class="ft-plan-go" data-ft="plan-go">
+        start plan
+      </button>
+    </div>
   </div>
 
   <div
@@ -102,6 +140,10 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
         data-ft-set="every"
       />
       <small>sessions</small>
+    </label>
+    <label class="ft-check">
+      <input type="checkbox" data-ft="notify" />
+      <span>notify me when a block ends</span>
     </label>
     <div class="ft-panel-actions">
       <button type="button" data-ft="reset-today">reset today</button>
@@ -182,6 +224,31 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     </label>
     <div class="ft-recent" data-ft="recent" aria-label="Recent tasks"></div>
   </div>
+
+  <section class="ft-strip" data-ft="strip" aria-label="Plan" hidden>
+    <div class="ft-strip-head">
+      <span data-ft="strip-start"></span>
+      <button type="button" class="ft-replan" data-ft="replan" hidden>
+        replan from now
+      </button>
+      <span data-ft="strip-end"></span>
+    </div>
+    <div class="ft-track" data-ft="track">
+      <div class="ft-now" data-ft="now" aria-hidden="true"><i></i></div>
+    </div>
+    <div class="ft-label-editor" data-ft="label-editor" hidden>
+      <span data-ft="label-time"></span>
+      <input
+        data-ft="label-input"
+        type="text"
+        maxlength="60"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="label this block"
+        aria-label="Block label"
+      />
+    </div>
+  </section>
 
   <div class="ft-today" data-ft="today-wrap" hidden>
     <span class="ft-dots" data-ft="dots"></span>
@@ -639,9 +706,239 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     }
   }
 
+  /* ---- Gentle note ---------------------------------------------------- */
+  .ft-toast {
+    position: absolute;
+    top: 1rem;
+    left: 50%;
+    z-index: 6;
+    max-width: calc(100vw - 2rem);
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--ft-faint);
+    border-radius: 999px;
+    background: rgb(24 24 27 / 0.92);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.35);
+    color: var(--ft-ink);
+    font-size: 0.8rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0;
+    transform: translate(-50%, -6px);
+    pointer-events: none;
+    transition:
+      opacity 160ms ease-out,
+      transform 160ms ease-out;
+  }
+  .ft-toast[data-show="true"] {
+    opacity: 1;
+    transform: translate(-50%, 0);
+    transition:
+      opacity 260ms var(--ft-ease-out),
+      transform 260ms var(--ft-ease-out);
+  }
+  @media (max-width: 560px) {
+    /* Below the corner pills on narrow screens. */
+    .ft-toast {
+      top: 3.3rem;
+    }
+  }
+
+  /* ---- Plan panel ----------------------------------------------------- */
+  .ft-plan-panel {
+    width: min(17.5rem, calc(100vw - 2rem));
+  }
+  .ft-plan-until {
+    display: flex !important;
+    justify-content: space-between;
+  }
+  .ft-plan-until input {
+    width: auto;
+    color-scheme: dark;
+    text-align: left;
+  }
+  .ft-plan-quick {
+    display: flex;
+    gap: 0.35rem;
+  }
+  .ft-plan-quick button {
+    flex: 1;
+    padding: 0.25rem 0;
+    border: 1px solid var(--ft-faint);
+    border-radius: 999px;
+    color: var(--ft-dim);
+    transition:
+      color 150ms ease,
+      border-color 150ms ease,
+      transform 140ms var(--ft-ease-out);
+  }
+  .ft-plan-quick button:active {
+    transform: scale(0.97);
+  }
+  .ft-plan-summary {
+    min-height: 1.2em;
+    color: var(--ft-ink);
+  }
+  .ft-panel-actions .ft-plan-go {
+    margin-left: auto;
+    padding: 0.3rem 0.9rem;
+    border-radius: 999px;
+    background: #e8542e;
+    color: #fff;
+    text-decoration: none;
+    transition:
+      opacity 150ms ease,
+      transform 140ms var(--ft-ease-out);
+  }
+  .ft-panel-actions .ft-plan-go:active {
+    transform: scale(0.97);
+  }
+  .ft-panel-actions .ft-plan-go:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  .ft-check {
+    display: flex !important;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.2rem;
+  }
+  .ft-check input {
+    width: auto;
+    accent-color: #e8542e;
+  }
+
+  /* ---- Timeline strip ------------------------------------------------- */
+  .ft.has-plan .ft-hint {
+    display: none;
+  }
+  .ft.has-plan .ft-stage {
+    padding-bottom: 8.5rem;
+  }
+  .ft-strip {
+    position: absolute;
+    right: 1.25rem;
+    bottom: 2.6rem;
+    left: 1.25rem;
+    max-width: 960px;
+    margin-inline: auto;
+    font-size: 0.7rem;
+  }
+  .ft-strip-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 0.35rem;
+    color: var(--ft-dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .ft-replan {
+    color: var(--ft-hot);
+    text-decoration: underline;
+    text-decoration-color: rgb(255 154 92 / 0.4);
+    text-underline-offset: 3px;
+  }
+  .ft-track {
+    position: relative;
+    height: 26px;
+  }
+  .ft-block {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    overflow: hidden;
+    padding: 0 6px;
+    border-radius: 5px;
+    /* a hairline gap between neighbours */
+    box-shadow: inset -2px 0 0 var(--ft-bg);
+    color: var(--ft-ink);
+    font-size: 0.7rem;
+    line-height: 26px;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition:
+      opacity 300ms ease,
+      background-color 300ms ease;
+  }
+  .ft-block-focus {
+    background: rgb(232 84 46 / 0.28);
+    cursor: pointer;
+  }
+  .ft-block-short,
+  .ft-block-long {
+    background: rgb(30 158 143 / 0.28);
+  }
+  .ft-block-wrap {
+    background: rgb(236 232 225 / 0.1);
+  }
+  .ft-block.is-current.ft-block-focus {
+    background: rgb(232 84 46 / 0.55);
+  }
+  .ft-block.is-current.ft-block-short,
+  .ft-block.is-current.ft-block-long {
+    background: rgb(30 158 143 / 0.55);
+  }
+  .ft-block.is-past {
+    opacity: 0.35;
+  }
+  .ft-block-focus:focus-visible {
+    outline: 2px solid var(--ft-dim);
+    outline-offset: 1px;
+  }
+  .ft-block-focus:empty::before {
+    color: rgb(236 232 225 / 0.45);
+    content: "+ label";
+  }
+  .ft-now {
+    position: absolute;
+    inset: -4px 0;
+    pointer-events: none;
+  }
+  .ft-now i {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -1px;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--ft-ink);
+    box-shadow: 0 0 6px rgb(236 232 225 / 0.6);
+  }
+  .ft-label-editor {
+    position: absolute;
+    bottom: calc(100% + 0.4rem);
+    left: clamp(7rem, var(--x, 50%), calc(100% - 7rem));
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--ft-faint);
+    border-radius: 10px;
+    background: rgb(20 20 23 / 0.95);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.45);
+    color: var(--ft-dim);
+    transform: translateX(-50%);
+  }
+  .ft-label-editor input {
+    width: 11rem;
+    border: 0;
+    border-bottom: 1px solid var(--ft-faint);
+    background: transparent;
+    color: var(--ft-ink);
+    font: inherit;
+    font-size: 16px;
+    outline: none;
+    user-select: text;
+  }
+  .ft-label-editor input:focus {
+    border-bottom-color: #e8542e;
+  }
+
   @media (hover: hover) and (pointer: fine) {
     .ft-pill:hover,
-    .ft-recent button:hover {
+    .ft-recent button:hover,
+    .ft-plan-quick button:hover {
       border-color: var(--ft-dim);
       color: var(--ft-ink);
     }
@@ -663,6 +960,10 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     }
     .ft-task::after {
       transition: background-color 200ms ease;
+    }
+    .ft-toast,
+    .ft-toast[data-show="true"] {
+      transform: translate(-50%, 0);
     }
     .ft-hub[data-pressed] {
       transform: translate(-50%, -50%);
