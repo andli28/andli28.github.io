@@ -32,7 +32,9 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
 ---
 
 <div class="ft" data-mode="focus" data-state="idle">
-  <div class="ft-glow" aria-hidden="true"></div>
+  <div class="ft-glow" data-ft="glow-focus" aria-hidden="true"></div>
+  <div class="ft-glow ft-glow-break" data-ft="glow-break" aria-hidden="true">
+  </div>
 
   <div class="ft-top">
     <span class="ft-status" data-ft="status">focus · 1 of 4</span>
@@ -128,7 +130,6 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     --ft-color: #e8542e;
     --ft-hot: #ff9a5c;
     --ft-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-    --ft-glow: 0.6;
 
     position: relative;
     display: grid;
@@ -146,18 +147,31 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     --ft-hot: #7fe0c9;
   }
 
-  /* Warm light behind the dial; dims as the session runs out. */
+  /* Light behind the dial; dims as the session runs out. One layer per
+     mode so the color can crossfade. Opacity is set from JS on each layer. */
   .ft-glow {
     position: absolute;
     inset: 0;
     background: radial-gradient(
       circle at 50% 42%,
-      color-mix(in srgb, var(--ft-color) 32%, transparent) 0,
+      rgb(232 84 46 / 0.32) 0,
       transparent 55%
     );
-    opacity: var(--ft-glow);
+    opacity: 0;
+    /* Countdown drift is steady, so linear. */
     transition: opacity 1s linear;
     pointer-events: none;
+  }
+  .ft-glow-break {
+    background: radial-gradient(
+      circle at 50% 42%,
+      rgb(30 158 143 / 0.32) 0,
+      transparent 55%
+    );
+  }
+  /* Start, pause, reset, mode change: respond right away. */
+  .ft-glow.is-shifting {
+    transition: opacity 300ms var(--ft-ease-out);
   }
 
   .ft-top {
@@ -196,12 +210,21 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     aspect-ratio: 1;
     touch-action: none;
     cursor: grab;
-    filter: drop-shadow(0 30px 60px rgb(0 0 0 / 0.6));
+  }
+  /* Static shadow layer: drawn once, not re-blurred when the wedge changes. */
+  .ft-dial::before {
+    position: absolute;
+    inset: 1%;
+    border-radius: 50%;
+    box-shadow: 0 30px 60px rgb(0 0 0 / 0.6);
+    content: "";
+    pointer-events: none;
   }
   .ft-dial.is-dragging {
     cursor: grabbing;
   }
   .ft-dial svg {
+    position: relative;
     width: 100%;
     height: 100%;
     overflow: visible;
@@ -262,21 +285,18 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     outline: 2px solid var(--ft-dim);
     outline-offset: 2px;
   }
-  .ft-hub:active {
+  /* Set on pointer presses only, so keyboard toggles stay instant. */
+  .ft-hub[data-pressed] {
     transform: translate(-50%, -50%) scale(0.96);
   }
   .ft-time {
     font-size: clamp(0.95rem, 3.6vmin, 1.35rem);
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.02em;
+    transition: opacity 200ms ease;
   }
   .ft[data-state="paused"] .ft-time {
-    animation: ft-blink 1.2s steps(2, jump-none) infinite;
-  }
-  @keyframes ft-blink {
-    50% {
-      opacity: 0.35;
-    }
+    opacity: 0.5;
   }
 
   .ft-task input {
@@ -351,14 +371,13 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
       color: var(--ft-ink);
     }
   }
+  /* Opacity fades stay (nothing moves); the press scale goes. */
   @media (prefers-reduced-motion: reduce) {
-    .ft-glow,
     .ft-hub {
       transition: none;
     }
-    .ft[data-state="paused"] .ft-time {
-      animation: none;
-      opacity: 0.5;
+    .ft-hub[data-pressed] {
+      transform: translate(-50%, -50%);
     }
   }
 </style>

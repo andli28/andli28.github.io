@@ -11,6 +11,25 @@ const BREAK_MIN = { short: 5, long: 15 };
 const LONG_EVERY = 4;
 const HISTORY_DAYS = 30;
 const WEDGE_R = 132;
+const SWEEP_MS = 600;
+
+// cubic-bezier(0.23, 1, 0.32, 1): the strong ease-out used across the piece.
+function easeOut(t) {
+  const [x1, y1, x2, y2] = [0.23, 1, 0.32, 1];
+  const bez = (a, b, u) =>
+    3 * a * u * (1 - u) ** 2 + 3 * b * u ** 2 * (1 - u) + u ** 3;
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 20; i++) {
+    const mid = (lo + hi) / 2;
+    if (bez(x1, x2, mid) < t) lo = mid;
+    else hi = mid;
+  }
+  return bez(y1, y2, (lo + hi) / 2);
+}
+
+const prefersReducedMotion = () =>
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function load() {
   try {
@@ -69,6 +88,7 @@ export function mountFocusTimer(root) {
     todayWrap: $("today-wrap"),
     dots: $("dots"),
     total: $("total"),
+    glow: { focus: $("glow-focus"), break: $("glow-break") },
   };
 
   const saved = load();
@@ -94,6 +114,9 @@ export function mountFocusTimer(root) {
   let audio = null;
   let dragging = false;
   let dragMinutes = 0;
+  let lastFrameKey = "";
+  let sweep = null; // { from, to, start, raf } while the wedge sweeps in
+  let shiftTimer = null;
 
   function save() {
     const cutoff = Date.now() - HISTORY_DAYS * 86_400_000;
@@ -176,6 +199,7 @@ export function mountFocusTimer(root) {
 
   function tryStart() {
     if (state.running || remainingMs() <= 0) return;
+    cancelSweep();
     if (state.mode === "focus" && !el.task.value.trim()) {
       needTask();
       render();
@@ -228,6 +252,34 @@ export function mountFocusTimer(root) {
     if (!quiet) chime();
     save();
     render();
+    if (!quiet) sweepIn(state.setMs);
+  }
+
+  // Sweep the wedge from empty up to the new length when a phase ends.
+  function sweepIn(to) {
+    cancelSweep();
+    if (prefersReducedMotion()) return;
+    sweep = { to, start: performance.now(), raf: 0 };
+    const frame = now => {
+      if (!sweep) return;
+      const p = Math.min(1, (now - sweep.start) / SWEEP_MS);
+      drawDial(sweep.to * easeOut(p));
+      if (p < 1) sweep.raf = requestAnimationFrame(frame);
+      else {
+        sweep = null;
+        lastFrameKey = "";
+        renderClock();
+      }
+    };
+    drawDial(0);
+    sweep.raf = requestAnimationFrame(frame);
+  }
+
+  function cancelSweep() {
+    if (!sweep) return;
+    cancelAnimationFrame(sweep.raf);
+    sweep = null;
+    lastFrameKey = "";
   }
 
   function tick() {
@@ -264,6 +316,7 @@ export function mountFocusTimer(root) {
     if (e.button !== 0 || e.target.closest("[data-ft='hub']") || dragging)
       return;
     dragging = true;
+    cancelSweep();
     el.dial.setPointerCapture(e.pointerId);
     el.dial.classList.add("is-dragging");
     ensureAudio();
@@ -301,6 +354,12 @@ export function mountFocusTimer(root) {
   // ---- Other events ------------------------------------------------------
 
   el.hub.addEventListener("click", toggle);
+  el.hub.addEventListener("pointerdown", () => {
+    el.hub.dataset.pressed = "";
+  });
+  for (const type of ["pointerup", "pointercancel", "pointerleave"]) {
+    el.hub.addEventListener(type, () => delete el.hub.dataset.pressed);
+  }
 
   el.sound.addEventListener("click", () => {
     state.sound = !state.sound;
@@ -338,6 +397,8 @@ export function mountFocusTimer(root) {
     "astro:before-swap",
     () => {
       stopTicking();
+      cancelSweep();
+      clearTimeout(shiftTimer);
       document.removeEventListener("keydown", onKey);
       document.title = pageTitle;
     },
@@ -346,18 +407,45 @@ export function mountFocusTimer(root) {
 
   // ---- Rendering ---------------------------------------------------------
 
+  function drawDial(ms) {
+    el.wedge.setAttribute("d", wedgePath(ms));
+    const deg = (Math.min(ms, DIAL_MS) / DIAL_MS) * 360;
+    el.hand.setAttribute("transform", `rotate(${deg.toFixed(2)})`);
+  }
+
+  function setGlow(shift) {
+    const left = Math.max(0, remainingMs());
+    const frac = state.setMs > 0 ? left / state.setMs : 0;
+    const value = state.running ? 0.2 + 0.8 * frac : 0.6;
+    const active = state.mode === "break" ? "break" : "focus";
+    for (const [mode, layer] of Object.entries(el.glow)) {
+      if (shift) {
+        layer.classList.add("is-shifting");
+      }
+      layer.style.opacity = mode === active ? value.toFixed(3) : "0";
+    }
+    if (shift) {
+      clearTimeout(shiftTimer);
+      shiftTimer = setTimeout(() => {
+        for (const layer of Object.values(el.glow)) {
+          layer.classList.remove("is-shifting");
+        }
+      }, 320);
+    }
+  }
+
+  // Ticks run 5x a second to catch the end promptly, but the dial and text
+  // only change when the displayed second does.
   function renderClock() {
     const left = Math.max(0, remainingMs());
+    const secs = Math.ceil(left / 1000);
+    const key = `${secs}|${state.mode}|${state.running}`;
+    if (key === lastFrameKey) return;
+    lastFrameKey = key;
     const clock = fmtClock(left);
     el.time.textContent = clock;
-    el.wedge.setAttribute("d", wedgePath(left));
-    const deg = (Math.min(left, DIAL_MS) / DIAL_MS) * 360;
-    el.hand.setAttribute("transform", `rotate(${deg.toFixed(2)})`);
-    const frac = state.setMs > 0 ? left / state.setMs : 0;
-    root.style.setProperty(
-      "--ft-glow",
-      String(state.running ? 0.2 + 0.8 * frac : 0.6)
-    );
+    if (!sweep) drawDial(left);
+    setGlow(false);
     document.title = state.running
       ? `${clock} · ${state.mode === "focus" ? state.task || "focus" : "break"}`
       : pageTitle;
@@ -420,7 +508,9 @@ export function mountFocusTimer(root) {
     el.task.placeholder =
       state.mode === "break" ? "take a breath" : "what are you working on?";
 
+    lastFrameKey = "";
     renderClock();
+    setGlow(true);
     renderToday();
   }
 
