@@ -7,6 +7,7 @@
 // counts down to the current block's planned end.
 
 import { blockAt, buildPlan, describePlan } from "./focus-plan.js";
+import { createMini, miniSupported } from "./focus-mini.js";
 
 const STORAGE_KEY = "lab-focus-timer-v2";
 const MIN = 60_000;
@@ -127,6 +128,7 @@ export function mountFocusTimer(root) {
     task: $("task"),
     recent: $("recent"),
     sound: $("sound"),
+    mini: $("mini-btn"),
     notify: $("notify"),
     cycle: $("cycle"),
     todayWrap: $("today-wrap"),
@@ -200,6 +202,31 @@ export function mountFocusTimer(root) {
   let shiftTimer = null;
   let toastTimer = null;
   let editingId = null;
+
+  const mini = createMini({
+    onToggle: () => toggle(),
+    onTick: () => tick(),
+    onClose: () => render(),
+  });
+
+  function miniView() {
+    const left = Math.max(0, remainingMs());
+    const focus = state.mode === "focus";
+    let label = focus ? state.task || "focus" : KIND_NAME[state.breakKind];
+    if (focus && !inProgress() && root.classList.contains("needs-task")) {
+      label = "name a task first";
+    }
+    return {
+      time: fmtClock(left),
+      frac: state.setMs > 0 ? Math.min(1, left / state.setMs) : 0,
+      label,
+      mode: state.mode,
+      running: state.running,
+      started: inProgress(),
+      color: focus ? "#e8542e" : "#1e9e8f",
+      glow: focus ? "rgba(232,84,46,0.22)" : "rgba(30,158,143,0.22)",
+    };
+  }
 
   const tabKey = () => (state.mode === "focus" ? "focus" : state.breakKind);
   const lengthFor = key => state.settings[key] * MIN;
@@ -919,6 +946,20 @@ export function mountFocusTimer(root) {
     el.hub.addEventListener(type, () => delete el.hub.dataset.pressed);
   }
 
+  el.mini.hidden = !miniSupported();
+  el.mini.addEventListener("click", async () => {
+    if (mini.isOpen()) {
+      await mini.close();
+      return;
+    }
+    try {
+      await mini.open(miniView());
+    } catch {
+      notice("couldn't open the mini timer in this browser");
+    }
+    render();
+  });
+
   el.sound.addEventListener("click", () => {
     state.sound = !state.sound;
     if (state.sound) ensureAudio();
@@ -979,6 +1020,7 @@ export function mountFocusTimer(root) {
       cancelSweep();
       clearTimeout(shiftTimer);
       clearTimeout(toastTimer);
+      mini.close();
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("pointerdown", onOutside);
       document.title = pageTitle;
@@ -1026,6 +1068,7 @@ export function mountFocusTimer(root) {
     if (!sweep) drawDial(left);
     setGlow(false);
     renderStripNow();
+    mini.update(miniView());
     document.title = state.running
       ? `${clock} · ${state.mode === "focus" ? state.task || "focus" : KIND_NAME[state.breakKind]}`
       : pageTitle;
@@ -1169,6 +1212,8 @@ export function mountFocusTimer(root) {
     );
 
     el.hub.setAttribute("aria-label", state.running ? "Pause" : "Start");
+    el.mini.textContent = mini.isOpen() ? "close mini" : "pop out";
+    el.mini.setAttribute("aria-pressed", String(mini.isOpen()));
     el.sound.textContent = `sound: ${state.sound ? "on" : "off"}`;
     el.sound.setAttribute("aria-pressed", String(state.sound));
     el.notify.checked = state.notify;
