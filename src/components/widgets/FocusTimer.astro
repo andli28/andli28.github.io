@@ -1,0 +1,1040 @@
+---
+/**
+ * Full-screen focus timer: name a task, twist the dial, focus.
+ * Meant for a Lab entry with `fullscreen: true`. State lives in localStorage.
+ *
+ *   import FocusTimer from "@/components/widgets/FocusTimer.astro";
+ *   <FocusTimer />
+ */
+
+// Static dial face: a tick per minute, a longer one and a numeral every five.
+const ticks = Array.from({ length: 60 }, (_, i) => {
+  const major = i % 5 === 0;
+  const a = (i / 60) * Math.PI * 2;
+  const r1 = 182;
+  const r2 = major ? 168 : 175;
+  return {
+    major,
+    x1: +(r1 * Math.sin(a)).toFixed(2),
+    y1: +(-r1 * Math.cos(a)).toFixed(2),
+    x2: +(r2 * Math.sin(a)).toFixed(2),
+    y2: +(-r2 * Math.cos(a)).toFixed(2),
+  };
+});
+const numerals = Array.from({ length: 12 }, (_, i) => {
+  const a = (i / 12) * Math.PI * 2;
+  return {
+    n: i * 5,
+    x: +(152 * Math.sin(a)).toFixed(2),
+    y: +(-152 * Math.cos(a)).toFixed(2),
+  };
+});
+---
+
+<div class="ft" data-mode="focus" data-state="idle">
+  <div class="ft-glow" data-ft="glow-focus" aria-hidden="true"></div>
+  <div class="ft-glow ft-glow-break" data-ft="glow-break" aria-hidden="true">
+  </div>
+
+  <p class="ft-toast" data-ft="toast" role="status" aria-live="polite"></p>
+
+  <div class="ft-top">
+    <button
+      type="button"
+      class="ft-pill"
+      data-ft="plan-btn"
+      aria-expanded="false"
+      aria-controls="ft-plan-panel"
+    >
+      plan
+    </button>
+    <button
+      type="button"
+      class="ft-pill"
+      data-ft="settings-btn"
+      aria-expanded="false"
+      aria-controls="ft-panel"
+    >
+      settings
+    </button>
+    <button
+      type="button"
+      class="ft-pill"
+      data-ft="mini-btn"
+      aria-pressed="false"
+      title="Keep a small timer on top of your other windows"
+      hidden
+    >
+      pop out
+    </button>
+    <button type="button" class="ft-pill" data-ft="sound" aria-pressed="false">
+      sound: off
+    </button>
+  </div>
+
+  <div
+    class="ft-panel ft-plan-panel"
+    id="ft-plan-panel"
+    data-ft="plan-panel"
+    data-open="false"
+    role="dialog"
+    aria-label="Plan your time"
+  >
+    <label class="ft-plan-until">
+      <span>free until</span>
+      <input type="time" data-ft="plan-end" />
+    </label>
+    <div class="ft-plan-quick">
+      <button type="button" data-plan-add="30">+30m</button>
+      <button type="button" data-plan-add="60">+1h</button>
+      <button type="button" data-plan-add="120">+2h</button>
+      <button type="button" data-plan-add="180">+3h</button>
+    </div>
+    <p class="ft-plan-summary" data-ft="plan-summary"></p>
+    <div class="ft-panel-actions">
+      <button type="button" data-ft="plan-clear" hidden>clear plan</button>
+      <button type="button" class="ft-plan-go" data-ft="plan-go">
+        start plan
+      </button>
+    </div>
+  </div>
+
+  <div
+    class="ft-panel"
+    id="ft-panel"
+    data-ft="panel"
+    data-open="false"
+    role="dialog"
+    aria-label="Timer settings"
+  >
+    <label>
+      <span>focus</span>
+      <input
+        type="number"
+        inputmode="numeric"
+        min="1"
+        max="180"
+        data-ft-set="focus"
+      />
+      <small>min</small>
+    </label>
+    <label>
+      <span>short break</span>
+      <input
+        type="number"
+        inputmode="numeric"
+        min="1"
+        max="60"
+        data-ft-set="short"
+      />
+      <small>min</small>
+    </label>
+    <label>
+      <span>long break</span>
+      <input
+        type="number"
+        inputmode="numeric"
+        min="1"
+        max="90"
+        data-ft-set="long"
+      />
+      <small>min</small>
+    </label>
+    <label>
+      <span>long break every</span>
+      <input
+        type="number"
+        inputmode="numeric"
+        min="2"
+        max="12"
+        data-ft-set="every"
+      />
+      <small>sessions</small>
+    </label>
+    <label class="ft-check">
+      <input type="checkbox" data-ft="notify" />
+      <span>notify me when a block ends</span>
+    </label>
+    <div class="ft-panel-actions">
+      <button type="button" data-ft="reset-today">reset today</button>
+      <button type="button" data-ft="clear-history">clear history</button>
+    </div>
+  </div>
+
+  <div class="ft-stage">
+    <div class="ft-tabs" role="group" aria-label="Mode">
+      <button type="button" data-ft-mode="focus" aria-pressed="true">
+        focus
+        <span class="ft-cycle" data-ft="cycle"></span>
+      </button>
+      <button type="button" data-ft-mode="short" aria-pressed="false">
+        short break
+      </button>
+      <button type="button" data-ft-mode="long" aria-pressed="false">
+        long break
+      </button>
+    </div>
+
+    <div class="ft-dial" data-ft="dial">
+      <svg viewBox="-200 -200 400 400" aria-hidden="true">
+        <defs>
+          <radialGradient id="ft-face" cx="50%" cy="38%" r="70%">
+            <stop offset="0" stop-color="#1f1f23"></stop>
+            <stop offset="1" stop-color="#121214"></stop>
+          </radialGradient>
+          <radialGradient id="ft-wedge" cx="50%" cy="50%" r="50%">
+            <stop offset="0.2" stop-color="var(--ft-hot)"></stop>
+            <stop offset="1" stop-color="var(--ft-color)"></stop>
+          </radialGradient>
+          <radialGradient id="ft-hub" cx="40%" cy="30%" r="80%">
+            <stop offset="0" stop-color="#3a3a40"></stop>
+            <stop offset="1" stop-color="#1a1a1d"></stop>
+          </radialGradient>
+        </defs>
+        <circle class="ft-rim" r="196"></circle>
+        <circle r="190" fill="url(#ft-face)"></circle>
+        <path class="ft-wedge" data-ft="wedge" fill="url(#ft-wedge)"></path>
+        {
+          ticks.map(t => (
+            <line
+              class={t.major ? "ft-tick ft-major" : "ft-tick"}
+              x1={t.x1}
+              y1={t.y1}
+              x2={t.x2}
+              y2={t.y2}
+            />
+          ))
+        }
+        {
+          numerals.map(n => (
+            <text class="ft-num" x={n.x} y={n.y}>
+              {n.n}
+            </text>
+          ))
+        }
+        <line class="ft-hand" data-ft="hand" x1="0" y1="0" x2="0" y2="-132"
+        ></line>
+        <circle r="52" fill="url(#ft-hub)" class="ft-hub-disc"></circle>
+      </svg>
+      <button type="button" class="ft-hub" data-ft="hub" aria-label="Start">
+        <span class="ft-time" data-ft="time" role="timer">25:00</span>
+      </button>
+    </div>
+
+    <label class="ft-task">
+      <span class="sr-only">What are you working on?</span>
+      <input
+        data-ft="task"
+        type="text"
+        maxlength="60"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="what are you working on?"
+      />
+    </label>
+    <div class="ft-recent" data-ft="recent" aria-label="Recent tasks"></div>
+  </div>
+
+  <section class="ft-strip" data-ft="strip" aria-label="Plan" hidden>
+    <div class="ft-strip-head">
+      <span data-ft="strip-start"></span>
+      <button type="button" class="ft-replan" data-ft="replan" hidden>
+        replan from now
+      </button>
+      <span data-ft="strip-end"></span>
+    </div>
+    <div class="ft-track" data-ft="track">
+      <div class="ft-now" data-ft="now" aria-hidden="true"><i></i></div>
+    </div>
+    <div class="ft-label-editor" data-ft="label-editor" hidden>
+      <span data-ft="label-time"></span>
+      <input
+        data-ft="label-input"
+        type="text"
+        maxlength="60"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="label this block"
+        aria-label="Block label"
+      />
+    </div>
+  </section>
+
+  <div class="ft-today" data-ft="today-wrap" hidden>
+    <span class="ft-dots" data-ft="dots"></span>
+    <span data-ft="total"></span>
+  </div>
+
+  <p class="ft-hint">name it · twist the dial · tap to pause</p>
+</div>
+
+<script>
+  import { mountFocusTimer } from "./focus-timer.js";
+  const mountAll = () =>
+    document.querySelectorAll<HTMLElement>(".ft").forEach(mountFocusTimer);
+  mountAll();
+  document.addEventListener("astro:page-load", mountAll);
+</script>
+
+<style is:global>
+  .ft {
+    --ft-bg: #0b0b0d;
+    --ft-ink: #ece8e1;
+    --ft-dim: rgb(236 232 225 / 0.45);
+    --ft-faint: rgb(236 232 225 / 0.18);
+    --ft-color: #e8542e;
+    --ft-hot: #ff9a5c;
+    --ft-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+
+    position: relative;
+    display: grid;
+    min-height: 100svh;
+    place-items: center;
+    overflow: hidden;
+    background: var(--ft-bg);
+    color: var(--ft-ink);
+    font-family: var(--font-google-sans-code), ui-monospace, monospace;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .ft[data-mode="break"] {
+    --ft-color: #1e9e8f;
+    --ft-hot: #7fe0c9;
+  }
+
+  /* Light behind the dial; dims as the session runs out. One layer per
+     mode so the color can crossfade. Opacity is set from JS on each layer. */
+  .ft-glow {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(
+      circle at 50% 42%,
+      rgb(232 84 46 / 0.32) 0,
+      transparent 55%
+    );
+    opacity: 0;
+    /* Countdown drift is steady, so linear. */
+    transition: opacity 1s linear;
+    pointer-events: none;
+  }
+  .ft-glow-break {
+    background: radial-gradient(
+      circle at 50% 42%,
+      rgb(30 158 143 / 0.32) 0,
+      transparent 55%
+    );
+  }
+  /* Start, pause, reset, mode change: respond right away. */
+  .ft-glow.is-shifting {
+    transition: opacity 300ms var(--ft-ease-out);
+  }
+
+  .ft-top {
+    position: absolute;
+    top: 0.85rem;
+    right: 1rem;
+    /* Above the stage, which spans the full height and can reach under
+       the pills on narrower windows. */
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.8rem;
+  }
+  .ft-pill {
+    padding: 0.3rem 0.75rem;
+    border: 1px solid var(--ft-faint);
+    border-radius: 999px;
+    color: var(--ft-dim);
+    transition:
+      color 150ms ease,
+      border-color 150ms ease;
+  }
+
+  /* Settings panel: anchored under its pill, so it grows from that corner. */
+  .ft-panel {
+    position: absolute;
+    top: 3.1rem;
+    right: 1rem;
+    z-index: 5;
+    display: grid;
+    gap: 0.6rem;
+    width: min(17.5rem, calc(100vw - 2rem));
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--ft-faint);
+    border-radius: 12px;
+    background: rgb(20 20 23 / 0.92);
+    box-shadow: 0 18px 40px rgb(0 0 0 / 0.5);
+    font-size: 0.8rem;
+    opacity: 0;
+    transform: scale(0.96);
+    transform-origin: top right;
+    visibility: hidden;
+    transition:
+      opacity 120ms ease-out,
+      transform 120ms ease-out,
+      visibility 0s linear 120ms;
+  }
+  .ft-panel[data-open="true"] {
+    opacity: 1;
+    transform: none;
+    visibility: visible;
+    transition:
+      opacity 180ms var(--ft-ease-out),
+      transform 180ms var(--ft-ease-out);
+  }
+  .ft-panel label {
+    display: grid;
+    grid-template-columns: 1fr 3.25rem 4rem;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--ft-dim);
+  }
+  .ft-panel input {
+    width: 100%;
+    padding: 0.25rem 0.4rem;
+    border: 1px solid var(--ft-faint);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ft-ink);
+    font: inherit;
+    /* 16px keeps iOS Safari from zooming the page on focus */
+    font-size: 16px;
+    text-align: right;
+    user-select: text;
+  }
+  .ft-panel input::-webkit-inner-spin-button,
+  .ft-panel input::-webkit-outer-spin-button {
+    margin: 0;
+    appearance: none;
+  }
+  .ft-panel input {
+    appearance: textfield;
+  }
+  .ft-panel input:focus-visible {
+    border-color: var(--ft-color);
+    outline: none;
+  }
+  .ft-panel small {
+    color: rgb(236 232 225 / 0.3);
+    font-size: 0.75rem;
+  }
+  .ft-panel-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 0.35rem;
+    padding-top: 0.7rem;
+    border-top: 1px solid var(--ft-faint);
+  }
+  .ft-panel-actions button {
+    color: var(--ft-dim);
+    text-decoration: underline;
+    text-decoration-color: var(--ft-faint);
+    text-underline-offset: 3px;
+    transition: color 150ms ease;
+  }
+  .ft-panel-actions button:focus-visible {
+    outline: 2px solid var(--ft-dim);
+    outline-offset: 2px;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .ft-panel-actions button:hover {
+      color: var(--ft-ink);
+    }
+  }
+
+  .ft-stage {
+    position: relative;
+    display: grid;
+    justify-items: center;
+    gap: clamp(1.25rem, 3.5vh, 2.25rem);
+    padding: 4rem 1rem 6rem;
+  }
+
+  .ft-tabs {
+    display: flex;
+    gap: 0.25rem;
+    font-size: 0.8rem;
+  }
+  .ft-tabs button {
+    position: relative;
+    padding: 0.35rem 0.8rem;
+    border-radius: 999px;
+    color: var(--ft-dim);
+    transition:
+      color 150ms ease,
+      background-color 150ms ease;
+  }
+  .ft-tabs button[aria-pressed="true"] {
+    background: rgb(236 232 225 / 0.08);
+    color: var(--ft-ink);
+  }
+  .ft-tabs button:focus-visible,
+  .ft-pill:focus-visible {
+    outline: 2px solid var(--ft-dim);
+    outline-offset: 2px;
+  }
+  .ft-cycle {
+    position: absolute;
+    bottom: -0.55rem;
+    left: 50%;
+    display: flex;
+    gap: 4px;
+    transform: translateX(-50%);
+  }
+  .ft-cycle i {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: rgb(236 232 225 / 0.2);
+    transition: background-color 200ms ease;
+  }
+  .ft-cycle i.is-done {
+    background: #e8542e;
+  }
+
+  .ft-dial {
+    position: relative;
+    width: min(78vw, 58svh, 460px);
+    aspect-ratio: 1;
+    touch-action: none;
+    cursor: grab;
+  }
+  /* Static shadow layer: drawn once, not re-blurred when the wedge changes. */
+  .ft-dial::before {
+    position: absolute;
+    inset: 1%;
+    border-radius: 50%;
+    box-shadow: 0 30px 60px rgb(0 0 0 / 0.6);
+    content: "";
+    pointer-events: none;
+  }
+  .ft-dial.is-dragging {
+    cursor: grabbing;
+  }
+  .ft-dial svg {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+  .ft-rim {
+    fill: #1b1b1e;
+    stroke: rgb(255 255 255 / 0.06);
+    stroke-width: 1;
+  }
+  .ft-wedge {
+    filter: drop-shadow(
+      0 0 18px color-mix(in srgb, var(--ft-color) 60%, transparent)
+    );
+  }
+  .ft-tick {
+    stroke: rgb(236 232 225 / 0.22);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+  }
+  .ft-major {
+    stroke: rgb(236 232 225 / 0.6);
+    stroke-width: 2.5;
+  }
+  .ft-num {
+    fill: rgb(236 232 225 / 0.55);
+    font-size: 13px;
+    text-anchor: middle;
+    dominant-baseline: central;
+  }
+  .ft-hand {
+    stroke: var(--ft-ink);
+    stroke-width: 3;
+    stroke-linecap: round;
+    opacity: 0.85;
+  }
+  .ft-hub-disc {
+    stroke: rgb(255 255 255 / 0.08);
+    stroke-width: 1;
+  }
+
+  .ft-hub {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    display: grid;
+    width: 27%;
+    aspect-ratio: 1;
+    place-items: center;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    transition: transform 160ms var(--ft-ease-out);
+  }
+  .ft-hub:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--ft-color) 70%, transparent);
+    outline-offset: 4px;
+  }
+  /* Set on pointer presses only, so keyboard toggles stay instant. */
+  .ft-hub[data-pressed] {
+    transform: translate(-50%, -50%) scale(0.96);
+  }
+  .ft-time {
+    font-size: clamp(0.95rem, 3.6vmin, 1.35rem);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+    transition: opacity 200ms ease;
+  }
+  .ft[data-state="paused"] .ft-time {
+    opacity: 0.5;
+  }
+
+  /* A writing line under the task: the "type here" affordance. */
+  .ft-task {
+    position: relative;
+    display: block;
+    cursor: text;
+  }
+  .ft-task::after {
+    position: absolute;
+    right: 25%;
+    bottom: -0.45rem;
+    left: 25%;
+    height: 1px;
+    background: rgb(236 232 225 / 0.22);
+    content: "";
+    transform: scaleX(0.7);
+    transition:
+      transform 200ms var(--ft-ease-out),
+      background-color 200ms ease,
+      opacity 200ms ease;
+  }
+  .ft-task:focus-within::after {
+    background: var(--ft-color);
+    transform: scaleX(1);
+  }
+  .ft.needs-task .ft-task::after {
+    background: var(--ft-hot);
+    transform: scaleX(1);
+  }
+  /* While a session runs the line reads as a title; the writing line comes
+     back when you hover or click in to rename it. */
+  .ft[data-state="running"] .ft-task:not(:focus-within)::after,
+  .ft[data-state="paused"] .ft-task:not(:focus-within)::after {
+    opacity: 0;
+  }
+
+  .ft-recent {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.4rem;
+    min-height: 1.7rem;
+    max-width: min(86vw, 560px);
+    margin-top: -0.75rem;
+    font-size: 0.75rem;
+  }
+  .ft-recent button {
+    max-width: 14rem;
+    overflow: hidden;
+    padding: 0.25rem 0.65rem;
+    border: 1px solid var(--ft-faint);
+    border-radius: 999px;
+    color: var(--ft-dim);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition:
+      color 150ms ease,
+      border-color 150ms ease,
+      transform 140ms var(--ft-ease-out);
+  }
+  .ft-recent button[data-pressed] {
+    transform: scale(0.97);
+  }
+  .ft-recent button:focus-visible {
+    outline: 2px solid var(--ft-dim);
+    outline-offset: 2px;
+  }
+
+  .ft-task input {
+    width: min(86vw, 560px);
+    border: 0;
+    background: transparent;
+    color: var(--ft-ink);
+    font-family: "Iowan Old Style", "New York", ui-serif, Georgia, serif;
+    font-size: clamp(1.4rem, 4.2vw, 2.1rem);
+    font-style: italic;
+    text-align: center;
+    caret-color: var(--ft-color);
+    user-select: text;
+    outline: none;
+  }
+  .ft-task input::placeholder {
+    color: rgb(236 232 225 / 0.4);
+    transition: color 200ms ease;
+  }
+  .ft-task input:focus::placeholder {
+    color: rgb(236 232 225 / 0.3);
+  }
+  .ft.needs-task .ft-task input::placeholder {
+    color: var(--ft-hot);
+  }
+
+  .ft-today {
+    position: absolute;
+    bottom: 1.1rem;
+    left: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    color: var(--ft-dim);
+    font-size: 0.75rem;
+  }
+  .ft-dots {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    max-width: 40vw;
+  }
+  .ft-dots i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #e8542e;
+  }
+
+  .ft-hint {
+    position: absolute;
+    right: 1rem;
+    bottom: 1.1rem;
+    left: 1rem;
+    color: rgb(236 232 225 / 0.35);
+    font-size: 0.75rem;
+    text-align: center;
+    pointer-events: none;
+  }
+  .ft-today:not([hidden]) ~ .ft-hint {
+    bottom: 2.6rem;
+  }
+  @media (min-width: 720px) {
+    .ft-today:not([hidden]) ~ .ft-hint {
+      bottom: 1.1rem;
+    }
+  }
+
+  /* ---- Gentle note ---------------------------------------------------- */
+  .ft-toast {
+    position: absolute;
+    top: 1rem;
+    left: 50%;
+    z-index: 6;
+    max-width: calc(100vw - 2rem);
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--ft-faint);
+    border-radius: 999px;
+    background: rgb(24 24 27 / 0.92);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.35);
+    color: var(--ft-ink);
+    font-size: 0.8rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0;
+    transform: translate(-50%, -6px);
+    pointer-events: none;
+    transition:
+      opacity 160ms ease-out,
+      transform 160ms ease-out;
+  }
+  .ft-toast[data-show="true"] {
+    opacity: 1;
+    transform: translate(-50%, 0);
+    transition:
+      opacity 260ms var(--ft-ease-out),
+      transform 260ms var(--ft-ease-out);
+  }
+  @media (max-width: 560px) {
+    /* Below the corner pills on narrow screens. */
+    .ft-toast {
+      top: 3.3rem;
+    }
+    /* Four pills plus the back link have to share a phone's width. */
+    .ft-top {
+      right: 0.75rem;
+      gap: 0.3rem;
+      font-size: 0.72rem;
+    }
+    .ft-pill {
+      padding: 0.3rem 0.55rem;
+    }
+  }
+  @media (max-width: 380px) {
+    .ft-top {
+      gap: 0.2rem;
+      font-size: 0.68rem;
+    }
+    .ft-pill {
+      padding: 0.28rem 0.45rem;
+    }
+  }
+  /* No room for a fourth pill on the very smallest phones. */
+  @media (max-width: 340px) {
+    .ft-pill[data-ft="mini-btn"] {
+      display: none;
+    }
+  }
+
+  /* ---- Plan panel ----------------------------------------------------- */
+  .ft-plan-panel {
+    width: min(17.5rem, calc(100vw - 2rem));
+  }
+  .ft-plan-until {
+    display: flex !important;
+    justify-content: space-between;
+  }
+  .ft-plan-until input {
+    width: auto;
+    color-scheme: dark;
+    text-align: left;
+  }
+  .ft-plan-quick {
+    display: flex;
+    gap: 0.35rem;
+  }
+  .ft-plan-quick button {
+    flex: 1;
+    padding: 0.25rem 0;
+    border: 1px solid var(--ft-faint);
+    border-radius: 999px;
+    color: var(--ft-dim);
+    transition:
+      color 150ms ease,
+      border-color 150ms ease,
+      transform 140ms var(--ft-ease-out);
+  }
+  .ft-plan-quick button[data-pressed] {
+    transform: scale(0.97);
+  }
+  .ft-plan-summary {
+    min-height: 1.2em;
+    color: var(--ft-ink);
+  }
+  .ft-panel-actions .ft-plan-go {
+    margin-left: auto;
+    padding: 0.3rem 0.9rem;
+    border-radius: 999px;
+    background: #e8542e;
+    color: #fff;
+    text-decoration: none;
+    transition:
+      opacity 150ms ease,
+      transform 140ms var(--ft-ease-out);
+  }
+  .ft-panel-actions .ft-plan-go[data-pressed] {
+    transform: scale(0.97);
+  }
+  .ft-panel-actions .ft-plan-go:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  .ft-check {
+    display: flex !important;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.2rem;
+  }
+  .ft-check input {
+    width: auto;
+    accent-color: #e8542e;
+  }
+
+  /* ---- Timeline strip ------------------------------------------------- */
+  .ft.has-plan .ft-hint {
+    display: none;
+  }
+  .ft.has-plan .ft-stage {
+    padding-bottom: 8.5rem;
+  }
+  .ft-strip {
+    position: absolute;
+    right: 1.25rem;
+    bottom: 2.6rem;
+    left: 1.25rem;
+    max-width: 960px;
+    margin-inline: auto;
+    font-size: 0.7rem;
+    /* Fades in when a plan starts instead of popping into place. */
+    transition: opacity 200ms var(--ft-ease-out);
+    @starting-style {
+      opacity: 0;
+    }
+  }
+  .ft-strip-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 0.35rem;
+    color: var(--ft-dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .ft-replan {
+    color: var(--ft-hot);
+    text-decoration: underline;
+    text-decoration-color: rgb(255 154 92 / 0.4);
+    text-underline-offset: 3px;
+  }
+  .ft-track {
+    position: relative;
+    height: 26px;
+  }
+  .ft-block {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    overflow: hidden;
+    padding: 0 6px;
+    border-radius: 5px;
+    /* a hairline gap between neighbours */
+    box-shadow: inset -2px 0 0 var(--ft-bg);
+    color: var(--ft-ink);
+    font-size: 0.7rem;
+    line-height: 26px;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition:
+      opacity 300ms ease,
+      background-color 300ms ease;
+  }
+  .ft-block-focus {
+    background: rgb(232 84 46 / 0.28);
+    cursor: pointer;
+  }
+  .ft-block-short,
+  .ft-block-long {
+    background: rgb(30 158 143 / 0.28);
+  }
+  .ft-block-wrap {
+    background: rgb(236 232 225 / 0.1);
+  }
+  .ft-block.is-current.ft-block-focus {
+    background: rgb(232 84 46 / 0.55);
+  }
+  .ft-block.is-current.ft-block-short,
+  .ft-block.is-current.ft-block-long {
+    background: rgb(30 158 143 / 0.55);
+  }
+  .ft-block.is-past {
+    opacity: 0.35;
+  }
+  .ft-block-focus:focus-visible {
+    outline: 2px solid var(--ft-dim);
+    outline-offset: 1px;
+  }
+  .ft-block-focus:empty::before {
+    color: rgb(236 232 225 / 0.45);
+    content: "+ label";
+  }
+  .ft-now {
+    position: absolute;
+    inset: -4px 0;
+    pointer-events: none;
+  }
+  .ft-now i {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -1px;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--ft-ink);
+    box-shadow: 0 0 6px rgb(236 232 225 / 0.6);
+  }
+  .ft-label-editor {
+    position: absolute;
+    bottom: calc(100% + 0.4rem);
+    left: clamp(7rem, var(--x, 50%), calc(100% - 7rem));
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--ft-faint);
+    border-radius: 10px;
+    background: rgb(20 20 23 / 0.95);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.45);
+    color: var(--ft-dim);
+    transform: translateX(-50%);
+    /* A popover for its block: grows up out of it. */
+    transform-origin: 50% 100%;
+    transition:
+      opacity 150ms var(--ft-ease-out),
+      transform 150ms var(--ft-ease-out);
+    @starting-style {
+      opacity: 0;
+      transform: translateX(-50%) scale(0.97);
+    }
+  }
+  .ft-label-editor input {
+    width: 11rem;
+    border: 0;
+    border-bottom: 1px solid var(--ft-faint);
+    background: transparent;
+    color: var(--ft-ink);
+    font: inherit;
+    font-size: 16px;
+    outline: none;
+    user-select: text;
+  }
+  .ft-label-editor input:focus {
+    border-bottom-color: #e8542e;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .ft-pill:hover,
+    .ft-recent button:hover,
+    .ft-plan-quick button:hover {
+      border-color: var(--ft-dim);
+      color: var(--ft-ink);
+    }
+    .ft[data-state="running"] .ft-task:hover::after,
+    .ft[data-state="paused"] .ft-task:hover::after {
+      opacity: 1;
+    }
+    .ft-task:hover input::placeholder {
+      color: rgb(236 232 225 / 0.6);
+    }
+    .ft-task:hover:not(:focus-within)::after {
+      background: rgb(236 232 225 / 0.4);
+      transform: scaleX(1);
+    }
+    .ft-tabs button:not([aria-pressed="true"]):hover {
+      color: var(--ft-ink);
+    }
+  }
+  /* Opacity fades stay (nothing moves); the press scale goes. */
+  @media (prefers-reduced-motion: reduce) {
+    .ft-hub {
+      transition: none;
+    }
+    .ft-task::after {
+      transition: background-color 200ms ease;
+    }
+    .ft-toast,
+    .ft-toast[data-show="true"] {
+      transform: translate(-50%, 0);
+    }
+    .ft-hub[data-pressed] {
+      transform: translate(-50%, -50%);
+    }
+    .ft-panel,
+    .ft-panel[data-open="true"] {
+      transform: none;
+    }
+    .ft-recent button[data-pressed],
+    .ft-plan-quick button[data-pressed],
+    .ft-panel-actions .ft-plan-go[data-pressed] {
+      transform: none;
+    }
+    .ft-label-editor {
+      @starting-style {
+        transform: translateX(-50%);
+      }
+    }
+  }
+</style>

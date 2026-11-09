@@ -6,6 +6,8 @@ import Breadcrumb from "@/components/Breadcrumb.astro";
 import Datetime from "@/components/Datetime.astro";
 import Footer from "@/components/Footer.astro";
 import { getLabSlug, getSortedLab } from "@/utils/getSortedLab";
+import { getRelativeLocaleUrl } from "astro:i18n";
+import { useTranslations } from "@/i18n";
 import config from "@/config";
 
 export async function getStaticPaths() {
@@ -27,33 +29,77 @@ const {
   timezone,
   ogImage,
   canonicalURL,
+  fullscreen,
 } = entry.data;
 const { Content } = await render(entry);
 
 const ogImageUrl = typeof ogImage === "string" ? ogImage : ogImage?.src;
+
+const locale = Astro.currentLocale ?? config.site.lang;
+const t = useTranslations(locale);
 ---
 
-<Layout
-  title={`${title} | ${config.site.title}`}
-  description={description}
-  ogImage={ogImageUrl}
-  canonicalURL={canonicalURL}
->
-  <Header />
+{
+  fullscreen ? (
+    <Layout
+      title={`${title} | ${config.site.title}`}
+      description={description}
+      ogImage={ogImageUrl}
+      canonicalURL={canonicalURL}
+    >
+      <main id="main-content" class="lab-full">
+        <h1 class="sr-only">{title}</h1>
+        <a class="lab-back" href={getRelativeLocaleUrl(locale, "lab")}>
+          &larr; {t.nav.lab.toLowerCase()}
+        </a>
+        <Content />
+      </main>
+    </Layout>
+  ) : (
+    <Layout
+      title={`${title} | ${config.site.title}`}
+      description={description}
+      ogImage={ogImageUrl}
+      canonicalURL={canonicalURL}
+    >
+      <Header />
 
-  <Breadcrumb />
+      <Breadcrumb />
 
-  <main id="main-content" class="app-layout pb-4">
-    <h1 class="text-accent text-2xl font-bold sm:text-3xl">{title}</h1>
-    <div class="my-2">
-      <Datetime {pubDatetime} {modDatetime} {timezone} size="lg" />
-    </div>
-    <p class="mt-2 italic">{description}</p>
+      <main id="main-content" class="app-layout pb-4">
+        <h1 class="text-accent text-2xl font-bold sm:text-3xl">{title}</h1>
+        <div class="my-2">
+          <Datetime {pubDatetime} {modDatetime} {timezone} size="lg" />
+        </div>
+        <p class="mt-2 italic">{description}</p>
 
-    <article class="app-prose max-w-app mt-8 w-full">
-      <Content />
-    </article>
-  </main>
+        <article class="app-prose max-w-app mt-8 w-full">
+          <Content />
+        </article>
+      </main>
 
-  <Footer />
-</Layout>
+      <Footer />
+    </Layout>
+  )
+}
+
+<style>
+  .lab-full {
+    position: relative;
+    min-height: 100svh;
+    outline: none;
+  }
+  .lab-back {
+    position: fixed;
+    top: 1.1rem;
+    left: 1.25rem;
+    z-index: 10;
+    color: rgb(255 255 255 / 0.45);
+    font-size: 0.8rem;
+    transition: color 150ms ease;
+  }
+  .lab-back:hover,
+  .lab-back:focus-visible {
+    color: rgb(255 255 255 / 0.9);
+  }
+</style>
