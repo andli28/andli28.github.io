@@ -1,11 +1,12 @@
 ---
 import { getCollection } from "astro:content";
+import { Image } from "astro:assets";
 import { getRelativeLocaleUrl } from "astro:i18n";
 import Layout from "@/layouts/Layout.astro";
 import Header from "@/components/Header.astro";
 import Breadcrumb from "@/components/Breadcrumb.astro";
 import Main from "@/components/Main.astro";
-import Datetime from "@/components/Datetime.astro";
+import dayjs from "dayjs";
 import Footer from "@/components/Footer.astro";
 import { getLabSlug, getSortedLab } from "@/utils/getSortedLab";
 import { useTranslations } from "@/i18n";
@@ -30,25 +31,35 @@ const t = useTranslations(locale);
       entries.length === 0 ? (
         <p class="my-6 opacity-80">{t.pages.labEmpty}</p>
       ) : (
-        <ul>
+        <ul class="lab-list">
           {entries.map(({ id, data }) => (
-            <li class="my-6">
+            <li>
               <a
                 href={getRelativeLocaleUrl(locale, `lab/${getLabSlug(id)}`)}
-                class:list={[
-                  "text-accent inline-block text-lg font-medium",
-                  "decoration-dashed underline-offset-4 hover:underline",
-                  "focus-visible:no-underline focus-visible:underline-offset-0",
-                ]}
+                class="lab-row group"
               >
-                <h2>{data.title}</h2>
+                <span class="lab-thumb" aria-hidden="true">
+                  {data.thumbnail && (
+                    <Image
+                      src={data.thumbnail}
+                      alt=""
+                      width={160}
+                      height={96}
+                      loading="lazy"
+                    />
+                  )}
+                </span>
+                <span class="min-w-0 flex-1">
+                  <h2 class="lab-title">{data.title}</h2>
+                  <p class="lab-desc">{data.description}</p>
+                </span>
+                <time
+                  class="lab-date"
+                  datetime={data.pubDatetime.toISOString()}
+                >
+                  {dayjs(data.pubDatetime).format("MMM YYYY")}
+                </time>
               </a>
-              <Datetime
-                pubDatetime={data.pubDatetime}
-                modDatetime={data.modDatetime}
-                timezone={data.timezone}
-              />
-              <p>{data.description}</p>
             </li>
           ))}
         </ul>
@@ -58,3 +69,61 @@ const t = useTranslations(locale);
 
   <Footer />
 </Layout>
+
+<style>
+  .lab-list {
+    margin-block: 1.5rem;
+  }
+  .lab-row {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    margin-inline: -0.5rem;
+    padding: 0.625rem 0.5rem;
+    border-radius: 0.5rem;
+    transition: background-color 150ms ease;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .lab-row:hover {
+      background-color: color-mix(in oklab, var(--foreground) 5%, transparent);
+    }
+  }
+  .lab-thumb {
+    flex-shrink: 0;
+    width: 5rem;
+    aspect-ratio: 5 / 3;
+    overflow: hidden;
+    border-radius: 0.4rem;
+    background-color: color-mix(in oklab, var(--foreground) 10%, transparent);
+    box-shadow: inset 0 0 0 1px
+      color-mix(in oklab, var(--foreground) 10%, transparent);
+  }
+  .lab-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+  }
+  .lab-title {
+    color: var(--accent);
+    font-weight: 500;
+    line-height: 1.3;
+  }
+  .lab-desc {
+    overflow: hidden;
+    font-size: 0.875rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.75;
+  }
+  .lab-date {
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    opacity: 0.6;
+  }
+  @media (max-width: 40rem) {
+    .lab-date {
+      display: none;
+    }
+  }
+</style>
