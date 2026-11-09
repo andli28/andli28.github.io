@@ -1,4 +1,3 @@
-import type { CollectionEntry } from "astro:content";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
@@ -9,7 +8,7 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 
 /**
- * Determines whether a post is eligible to be listed/rendered.
+ * Determines whether a post (or playground entry) is eligible to be listed/rendered.
  *
  * - Drafts are shown in dev (so you can preview them) and excluded from builds
  * - In production, excludes posts whose `pubDatetime` falls on a later calendar
@@ -20,7 +19,11 @@ dayjs.extend(timezone);
  * `pubDatetime` day, not at a time of day. `Datetime.astro` uses the same
  * timezone, so the byline shows that day unless a later `modDatetime` is set.
  */
-export function postFilter({ data }: CollectionEntry<"posts">) {
+type DatedEntry = {
+  data: { draft?: boolean; pubDatetime: Date; timezone?: string };
+};
+
+export function postFilter({ data }: DatedEntry) {
   if (import.meta.env.DEV) return true;
   if (data.draft) return false;
 

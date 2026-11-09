@@ -5,6 +5,7 @@ export default {
     home: "Home",
     posts: "Posts",
     tags: "Tags",
+    playground: "Playground",
     about: "About",
     resume: "Resume",
     archives: "Archives",
@@ -47,6 +48,10 @@ export default {
 
     postsTitle: "Posts",
     postsDesc: "All the articles I've posted.",
+
+    playgroundTitle: "Playground",
+    playgroundDesc: "Interactive demos and games to play with.",
+    playgroundEmpty: "Nothing here yet. Check back soon.",
 
     archivesTitle: "Archives",
     archivesDesc: "All the articles I've archived.",
