@@ -2,8 +2,9 @@
 //   chat(messages, { job, summary, max }) → { text, in, out }
 //
 // `emulated` is a scripted weak model: it reads the real transcript and
-// behaves the way small models tend to. `webllm` is a real model running in
-// the browser on WebGPU; nothing is downloaded until it is asked for.
+// behaves the way small models tend to. `realModel` is Llama 3.2 1B running in
+// the browser on WebGPU (see executorch.js); nothing is downloaded until it
+// is asked for.
 
 import { est, TOOLS } from "./bench.js";
 
@@ -78,46 +79,11 @@ export function emulated() {
   };
 }
 
-// Small instruct models, best first. The first one WebLLM ships is used.
-const PREFERRED = [
-  "Qwen2.5-1.5B-Instruct-q4f16_1-MLC",
-  "Llama-3.2-1B-Instruct-q4f16_1-MLC",
-  "Qwen2.5-0.5B-Instruct-q4f16_1-MLC",
-];
-
 export const hasWebGPU = () =>
   typeof navigator !== "undefined" && "gpu" in navigator;
 
-export async function webllm(onProgress = () => {}) {
-  if (!hasWebGPU()) throw new Error("This browser doesn't have WebGPU.");
-  const lib = await import("@mlc-ai/web-llm");
-  const list = lib.prebuiltAppConfig.model_list;
-  const id = PREFERRED.find(x => list.some(m => m.model_id === x));
-  if (!id) throw new Error("No suitable model in this WebLLM build.");
-  const engine = await lib.CreateMLCEngine(
-    id,
-    { initProgressCallback: p => onProgress(p.progress ?? 0, p.text ?? "") },
-    { context_window_size: 4096 }
-  );
-  return {
-    name: id.replace(/-q4.*$/, ""),
-    real: true,
-    async chat(messages, { max = 160 } = {}) {
-      const r = await engine.chat.completions.create({
-        messages,
-        temperature: 0,
-        seed: 7,
-        max_tokens: max,
-      });
-      const text = r.choices?.[0]?.message?.content || "";
-      return {
-        text,
-        in:
-          r.usage?.prompt_tokens ??
-          messages.reduce((n, m) => n + est(m.content) + 4, 0),
-        out: r.usage?.completion_tokens ?? est(text),
-      };
-    },
-    dispose: () => engine.unload(),
-  };
+// The real model is a separate module so that none of it loads until asked.
+export async function realModel(onProgress) {
+  const { executorch } = await import("./executorch.js");
+  return executorch(onProgress);
 }

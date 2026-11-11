@@ -3,7 +3,7 @@
 // downloading a real one.
 
 import { JOBS, SWITCHES, runBench } from "./bench.js";
-import { emulated, webllm, hasWebGPU } from "./llm.js";
+import { emulated, realModel, hasWebGPU } from "./llm.js";
 import { icon } from "./icons.js";
 
 const KEY = "ah:bench";
@@ -70,10 +70,10 @@ export function openBench(body) {
     "A scripted stand-in that reads the real transcript and behaves like a small model: instant, and the same every time.";
   const realNote = () =>
     !hasWebGPU()
-      ? "This browser has no WebGPU, so a real model can't run here. Try desktop Chrome or Edge."
+      ? "This browser has no WebGPU, so a real model can't run here. Try a current Chrome or Edge, or Safari 26."
       : real
-        ? `${real.name}, running in this tab. Results are measured and will vary.`
-        : "Runs a small open model inside this tab on your GPU. It downloads about 1 GB once, then your browser keeps it.";
+        ? `${real.name}, running in this tab on ExecuTorch. Results are measured and will vary. Built with Llama.`
+        : "Runs Llama 3.2 1B inside this tab on your GPU, using ExecuTorch. It downloads about 735 MB once, then your browser keeps it. Built with Llama.";
   function syncEngine() {
     segs[0].setAttribute("aria-pressed", String(!useReal));
     segs[1].setAttribute("aria-pressed", String(useReal));
@@ -152,12 +152,8 @@ export function openBench(body) {
       if (useReal) {
         if (!real) {
           goBtn.disabled = true;
-          real = await webllm((p, text) => {
-            noteEl.textContent =
-              `Loading the model: ${Math.round(p * 100)}%. ${text}`.slice(
-                0,
-                160
-              );
+          real = await realModel((p, label) => {
+            noteEl.textContent = `${label}: ${Math.round(p * 100)}%`;
           });
           goBtn.disabled = false;
         }
