@@ -44,7 +44,7 @@ function makeWorld() {
 
 export const TOOLS = {
   read_file: {
-    desc: 'read_file {"path": string, "grep"?: string} — returns the text of a file, or only the lines containing grep.',
+    desc: 'read_file {"path": string, "grep"?: string} — reads a local file such as config.json. Returns its text, or only the lines containing grep.',
     run: (w, a) => {
       const p = String(a.path || "");
       if (p in w.files) {
@@ -72,12 +72,14 @@ export const TOOLS = {
     },
   },
   fetch: {
-    desc: 'fetch {"url": string} — returns the text of a web page.',
+    desc: 'fetch {"url": string} — returns the text of a web page. Not for local files.',
     untrusted: true,
     run: (w, a) => {
       const u = String(a.url || "").replace(/^https?:\/\//, "");
       if (u in w.pages) return w.pages[u];
-      throw new Error(`fetch: could not reach ${u}`);
+      throw new Error(
+        `fetch: could not reach ${u}. fetch is for web pages; use read_file for a local file`
+      );
     },
   },
   write_file: {
