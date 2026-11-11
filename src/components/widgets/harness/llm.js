@@ -67,7 +67,7 @@ export function emulated() {
     name: "emulated model",
     real: false,
     async chat(messages, { job, summary }) {
-      await nap(70);
+      await nap(200);
       const text = decide(messages, job, summary);
       return {
         text,

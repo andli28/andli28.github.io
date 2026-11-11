@@ -91,6 +91,9 @@ export function openBench(body) {
   );
   syncEngine();
 
+  // While a run is going, the controls that would be ignored are disabled.
+  const lock = on => [...segs, ...sw.children].forEach(b => (b.disabled = on));
+
   function paintLane(name, results, live) {
     const lane = $(`[data-lane="${name}"]`);
     const dots = [...lane.querySelectorAll("i")];
@@ -143,7 +146,7 @@ export function openBench(body) {
     }
     running = true;
     stop = false;
-    body.classList.add("ah-benching");
+    lock(true);
     let model;
     try {
       if (useReal) {
@@ -164,7 +167,7 @@ export function openBench(body) {
       noteEl.textContent = `Couldn't load a real model (${e.message}). The emulated model still works.`;
       running = false;
       goBtn.disabled = false;
-      body.classList.remove("ah-benching");
+      lock(false);
       return;
     }
     syncEngine();
@@ -185,7 +188,7 @@ export function openBench(body) {
           const k = JOBS.indexOf(job);
           if (state === "done") done[lane].push(result);
           if (state === "step" && step.kind === "model")
-            nowEl.textContent = `${lane === "bare" ? "Bare" : "Yours"} · ${job.name} · ${step.text.replace(/\s+/g, " ").slice(0, 70)}`;
+            nowEl.textContent = `${lane === "bare" ? "Bare" : "Yours"} · ${job.name} · turn ${step.turns}`;
           paintLane(lane, done[lane], k);
         },
         () => stop
@@ -202,7 +205,7 @@ export function openBench(body) {
       ? "Stopped."
       : `Bare ${a}/${JOBS.length}, yours ${b}/${JOBS.length}. ${model.real ? `Measured on ${model.name}` : "Emulated model"}.`;
     running = false;
-    body.classList.remove("ah-benching");
+    lock(false);
     syncEngine();
   });
 }

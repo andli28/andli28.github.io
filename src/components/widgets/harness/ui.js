@@ -7,6 +7,7 @@ import { CHIPS, FAILS, NOTES, LAZY_SETS } from "./plugins.js";
 import { icon } from "./icons.js";
 import { openBench } from "./bench-ui.js";
 import { openDrill } from "./drill.js";
+import { makeDraggable } from "./drag.js";
 
 const KEY = "ah:v1";
 const GEMS = { a: 0, b: 1, c: 2, d: 3, e: 4 };
@@ -45,9 +46,19 @@ const h = (tag, cls, html) => {
   return e;
 };
 const wait = ms => new Promise(r => setTimeout(r, ms));
-const reduced = () =>
-  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+// How long each kind of step holds during a run, in ms. Steps that put words
+// in the bot's bubble hold long enough to read them.
+const PACE = {
+  start: 350,
+  turn: 360,
+  hop: 380,
+  fan: 260,
+  drop: 320,
+  squash: 500,
+  bubble: 900,
+  bubbleStays: 1700,
+};
 function load() {
   try {
     return JSON.parse(localStorage.getItem(KEY) || "null") ?? {};
@@ -230,11 +241,13 @@ export function mountHarness(root) {
     if (!canPlace(chip, at)) return false;
     if (from) {
       from.at = at;
+      state.settle = from;
     } else {
       if (left(chip) <= 0 || full()) return false;
       if (chip === "compact")
         state.placed[state.at] = mine().filter(p => p.chip !== "compact");
-      mine().push({ chip, at, set: 0 });
+      state.settle = { chip, at, set: 0 };
+      mine().push(state.settle);
     }
     state.armed = null;
     blip(520, 0.05, "triangle");
@@ -258,11 +271,11 @@ export function mountHarness(root) {
     const sets = setsOf(p.chip);
     const label = sets[p.set || 0];
     const b = h(
-      "button",
+      p.lock ? "span" : "button",
       `ah-chip ah-${fam}${mini ? " ah-mini" : ""}${p.lock ? " ah-lock" : ""}`,
       `${icon(p.chip)}${label ? `<em>${label}</em>` : ""}`
     );
-    b.type = "button";
+    if (!p.lock) b.type = "button";
     const name = CHIPS[p.chip].name;
     b.title = name + (label ? ` (${label})` : "");
     b.setAttribute(
@@ -271,6 +284,47 @@ export function mountHarness(root) {
     );
     b.dataset.chip = p.chip;
     return b;
+  }
+
+  // A chip the player has put down: tap to change its setting or take it
+  // back, drag to move it.
+  function placedChip(p, mini) {
+    const e = chipEl(p, mini);
+    if (p.lock) return e;
+    if (state.settle === p) e.classList.add("ah-settle");
+    e.addEventListener("click", ev => {
+      if (state.armed) return;
+      ev.stopPropagation();
+      tapPlaced(p);
+    });
+    draggable(e, p.chip, p);
+    return e;
+  }
+
+  function draggable(el, chip, placedRef) {
+    makeDraggable(el, {
+      host: root,
+      canStart: () => !state.running && state.stage !== 0 && !el.disabled,
+      onStart: () => {
+        state.armed = chip;
+        syncArmed();
+        el.classList.remove("ah-armed");
+      },
+      onDrop: under => {
+        const sock = under?.closest("[data-sock]");
+        state.armed = null;
+        if (sock && place(chip, sock.dataset.sock, placedRef)) return true;
+        if (placedRef && !sock) {
+          // dropped off the board: back to the tray
+          state.placed[state.at] = mine().filter(x => x !== placedRef);
+          save();
+          draw();
+          return true;
+        }
+        syncArmed();
+        return false;
+      },
+    });
   }
 
   function gemEl(g, exact, cls = "") {
@@ -327,15 +381,8 @@ export function mountHarness(root) {
   function col(sock, tile, extra) {
     const c = h("div", "ah-col");
     const slot = h("div", "ah-slot");
-    for (const p of all().filter(p => p.at === sock)) {
-      const e = chipEl(p, true);
-      e.addEventListener("click", ev => {
-        ev.stopPropagation();
-        tapPlaced(p);
-      });
-      dragSource(e, p.chip, p);
-      slot.append(e);
-    }
+    for (const p of all().filter(p => p.at === sock))
+      slot.append(placedChip(p, true));
     c.append(tile, slot);
     if (extra) c.append(extra);
     return c;
@@ -379,14 +426,8 @@ export function mountHarness(root) {
         trap.dataset.sock = "trap";
         trap.setAttribute("aria-label", "Somewhere it should never go");
         const s = h("div", "ah-slot");
-        for (const p of all().filter(p => p.at === "trap")) {
-          const e = chipEl(p, true);
-          e.addEventListener("click", ev => {
-            ev.stopPropagation();
-            tapPlaced(p);
-          });
-          s.append(e);
-        }
+        for (const p of all().filter(p => p.at === "trap"))
+          s.append(placedChip(p, true));
         extra = h("div", "ah-trapwrap");
         extra.append(trap, s);
       }
@@ -401,16 +442,8 @@ export function mountHarness(root) {
 
     // rack
     rack.innerHTML = `<span class="ah-racklabel">harness</span>`;
-    for (const p of all().filter(p => p.at === "bot")) {
-      const e = chipEl(p);
-      e.addEventListener("click", ev => {
-        if (state.armed) return;
-        ev.stopPropagation();
-        tapPlaced(p);
-      });
-      dragSource(e, p.chip, p);
-      rack.append(e);
-    }
+    for (const p of all().filter(p => p.at === "bot"))
+      rack.append(placedChip(p));
 
     // window
     cellsEl.innerHTML = "";
@@ -459,7 +492,7 @@ export function mountHarness(root) {
         state.armed = state.armed === chip ? null : chip;
         syncArmed();
       });
-      dragSource(e, chip, null);
+      draggable(e, chip, null);
       tray.append(e);
     });
     if (lv.slots) {
@@ -475,9 +508,43 @@ export function mountHarness(root) {
     clearBtn.disabled = state.stage === 0 || !mine().length;
     runBtn.disabled = state.stage === 0 && lv.predict && !state.pick;
 
+    state.settle = null;
     restWindow();
     syncArmed();
     requestAnimationFrame(() => moveBot("start", true));
+  }
+
+  // What a spot on the board is, in one line. Shown when it's tapped.
+  function describe(sock) {
+    if (sock === "start")
+      return "The task. It sits in the window from the first turn.";
+    if (sock === "flag")
+      return "Done. The bot gets here by answering instead of calling a tool.";
+    if (sock === "trap") return "Somewhere the bot should never go.";
+    const i = +sock.slice(1);
+    const T = L().tiles[i];
+    if (T.tool === "sleep")
+      return "End of the session. The window starts over; the task is given again.";
+    const seen = seenOf(i);
+    const known = k => !T.hide || seen[k];
+    const cells = n => `${n} cell${n === 1 ? "" : "s"}`;
+    let out = `${CHIPS[T.tool].name}: the result takes ${cells(T.size)}`;
+    if (T.gem) {
+      out += T.exact ? " and holds an exact detail" : " and holds a fact";
+      if (known("at") && T.size > 2)
+        out += ` ${{ head: "at the start", tail: "at the end", mid: "in the middle" }[T.at || "head"]}`;
+    }
+    out += ".";
+    const n = T.needs?.length;
+    if (n)
+      out += ` Needs ${n === 1 ? "one fact" : `${n} facts`} in the window first.`;
+    if (T.danger && known("danger")) out += " Destructive.";
+    if (T.amber) out += " Needs a person's say-so.";
+    if (T.dull) out += " Dull, so easy to skip.";
+    if (T.spiky && known("spiky")) out += " This one carries orders.";
+    if (T.err && known("err")) out += " It fails before it works.";
+    if ((T.bad || T.corrupt) && seen.bad) out += " This edit went wrong.";
+    return out;
   }
 
   function drawStars(n, pop) {
@@ -581,12 +648,17 @@ export function mountHarness(root) {
     }
   }
 
+  let sayTimer;
   function say(text) {
     const b = botEl.querySelector(".ah-bubble");
+    clearTimeout(sayTimer);
     b.textContent = text;
-    b.classList.remove("ah-show");
-    void b.offsetWidth;
-    b.classList.add("ah-show");
+    b.classList.toggle("ah-show", !!text);
+    if (text)
+      sayTimer = setTimeout(
+        () => b.classList.remove("ah-show"),
+        PACE.bubbleStays
+      );
   }
 
   function syncArmed() {
@@ -607,6 +679,7 @@ export function mountHarness(root) {
   root.addEventListener("click", ev => {
     const s = ev.target.closest("[data-sock]");
     if (state.running) return;
+    if (state.awaitNext) return;
     if (state.stage === 0 && L().predict && s && s.dataset.sock !== "bot") {
       state.pick = s.dataset.sock;
       root
@@ -617,65 +690,20 @@ export function mountHarness(root) {
       blip(600, 0.05);
       return;
     }
-    if (!state.armed) return;
+    if (!state.armed) {
+      const tile = ev.target.closest(".ah-tile");
+      if (tile) {
+        tipEl.textContent = describe(tile.dataset.sock);
+        tipEl.classList.remove("ah-bad");
+      }
+      return;
+    }
     if (s && place(state.armed, s.dataset.sock)) return;
     if (!ev.target.closest(".ah-traychip")) {
       state.armed = null;
       syncArmed();
     }
   });
-
-  function dragSource(el, chip, placedRef) {
-    el.addEventListener("pointerdown", ev => {
-      if (state.running || state.stage === 0 || el.disabled) return;
-      if (placedRef?.lock) return;
-      const sx = ev.clientX;
-      const sy = ev.clientY;
-      let ghost = null;
-      const move = e => {
-        if (!ghost) {
-          if (Math.hypot(e.clientX - sx, e.clientY - sy) < 8) return;
-          ghost = chipEl({ chip, set: placedRef?.set || 0 });
-          ghost.classList.add("ah-ghost");
-          root.append(ghost);
-          state.armed = chip;
-          syncArmed();
-          el.classList.add("ah-lifted");
-        }
-        ghost.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
-        e.preventDefault();
-      };
-      const up = e => {
-        window.removeEventListener("pointermove", move);
-        window.removeEventListener("pointerup", up);
-        window.removeEventListener("pointercancel", up);
-        if (!ghost) return;
-        ghost.remove();
-        el.classList.remove("ah-lifted");
-        const under = document
-          .elementFromPoint(e.clientX, e.clientY)
-          ?.closest("[data-sock]");
-        state.armed = null;
-        let ok = false;
-        if (under) ok = place(chip, under.dataset.sock, placedRef);
-        if (!ok && placedRef && !under) {
-          state.placed[state.at] = mine().filter(x => x !== placedRef);
-          save();
-        }
-        if (!ok) draw();
-        // swallow the click that follows a drag
-        const eat = c => {
-          c.stopPropagation();
-          c.preventDefault();
-        };
-        window.addEventListener("click", eat, { capture: true, once: true });
-        setTimeout(() => window.removeEventListener("click", eat, true), 50);
-      };
-      window.addEventListener("pointermove", move, { passive: false });
-      window.addEventListener("pointerup", up);
-      window.addEventListener("pointercancel", up);
-    });
-  }
 
   const onKey = ev => {
     if (!root.isConnected)
@@ -741,6 +769,7 @@ export function mountHarness(root) {
     draw();
   });
   runBtn.addEventListener("click", () => {
+    if (state.awaitNext) return nextStage();
     if (state.running) {
       state.fast = true;
       return;
@@ -763,10 +792,10 @@ export function mountHarness(root) {
       .querySelectorAll(".ah-hinted,.ah-shake")
       .forEach(e => e.classList.remove("ah-hinted", "ah-shake"));
     const res = simulate(lv, all());
-    const pace = reduced() ? 0.4 : 1;
-    const nap = ms => (state.fast ? Promise.resolve() : wait(ms * pace));
+    const nap = ms => (state.fast ? Promise.resolve() : wait(ms));
     let hearts = lv.hearts ?? 2;
     botEl.dataset.face = "idle";
+    say("");
     moveBot("start", true);
     blocksEl.innerHTML = "";
 
@@ -775,7 +804,7 @@ export function mountHarness(root) {
       switch (e.t) {
         case "start":
           renderWin(e.win, false);
-          await nap(250);
+          await nap(PACE.start);
           break;
         case "call": {
           botEl.dataset.face = "think";
@@ -793,7 +822,7 @@ export function mountHarness(root) {
           else if (e.what === "delegate") say("send scout");
           else if (e.small) say("small model");
           blip(300 + Math.min(e.fill, 20) * 18, 0.05);
-          await nap(e.what === "turn" ? 240 : 420);
+          await nap(e.what === "turn" && !e.small ? PACE.turn : PACE.bubble);
           break;
         }
         case "hop":
@@ -804,61 +833,61 @@ export function mountHarness(root) {
               : "idle";
           moveBot(e.to);
           blip(e.to === "trap" ? 180 : 500, 0.06, "triangle");
-          await nap(e.fan ? 200 : 320);
+          await nap(e.fan ? PACE.fan : PACE.hop);
           break;
         case "reach":
           botEl.dataset.face = "confused";
-          await nap(350);
+          await nap(PACE.bubble);
           break;
         case "drop":
         case "note":
         case "load":
           renderWin(e.win);
           blip(380, 0.04, "square", 0.02);
-          await nap(260);
+          await nap(PACE.drop);
           break;
         case "compact":
           renderWin(e.win);
           if (e.lost.length || e.lostTask) say("lost detail");
-          await nap(480);
+          await nap(e.lost.length || e.lostTask ? PACE.bubble : PACE.squash);
           break;
         case "rewind":
           renderWin(e.win);
           say("rewind");
           moveBot(e.to > 0 ? e.to - 1 : "start");
-          await nap(520);
+          await nap(PACE.bubble);
           break;
         case "sleep":
           renderWin(e.win);
           say("new session");
-          await nap(520);
+          await nap(PACE.bubble);
           break;
         case "scout":
           say(`scout ${e.sub}/${lv.window}`);
           moveBot(e.tile);
-          await nap(380);
+          await nap(PACE.bubble);
           break;
         case "check":
           say(e.red ? "tests fail" : "tests pass");
-          await nap(420);
+          await nap(PACE.bubble);
           break;
         case "say":
           say(e.text);
-          await nap(420);
+          await nap(PACE.bubble);
           break;
         case "alt":
           say("plan B");
-          await nap(420);
+          await nap(PACE.bubble);
           break;
         case "skip":
           say("skip");
           sockEl("t" + e.tile)?.classList.add("ah-skipped");
-          await nap(380);
+          await nap(PACE.bubble);
           break;
         case "miss":
           botEl.dataset.face = "confused";
           say("where was it?");
-          await nap(480);
+          await nap(PACE.bubble);
           break;
         case "ask":
           hearts = e.hearts;
@@ -867,7 +896,7 @@ export function mountHarness(root) {
             x.classList.toggle("ah-gone", i >= Math.max(hearts, 0))
           );
           blip(240, 0.12, "sawtooth", 0.03);
-          await nap(460);
+          await nap(PACE.bubble);
           break;
         case "reveal": {
           const s = seenOf(e.tile);
@@ -887,7 +916,7 @@ export function mountHarness(root) {
     if (id !== state.runId) return;
     state.running = false;
     root.classList.remove("ah-running");
-    runBtn.querySelector("span").textContent = "Run";
+    runBtn.querySelector("span").textContent = state.awaitNext ? "Next" : "Run";
     save();
   }
 
@@ -900,8 +929,9 @@ export function mountHarness(root) {
       setTimeout(() => blip(880, 0.12), 90);
       const worked = lv.mode === "worked" && state.stage === 0;
       if (worked) {
-        await wait(500);
-        return nextStage(true);
+        tipEl.textContent = `It gets there: ${res.tokens} tokens in ${res.turns} turns.`;
+        state.awaitNext = true;
+        return;
       }
       const best = Math.max(state.stars[state.at] || 0, res.stars);
       state.stars[state.at] = best;
@@ -929,8 +959,8 @@ export function mountHarness(root) {
         }
         tipEl.textContent = msg;
         tipEl.classList.add("ah-bad");
-        await wait(state.fast ? 600 : 1800);
-        return nextStage(false);
+        state.awaitNext = true;
+        return;
       }
       tipEl.textContent = msg;
       tipEl.classList.add("ah-bad");
@@ -938,8 +968,11 @@ export function mountHarness(root) {
   }
 
   // Worked examples: after the bare run, the level's own chips drop in.
-  async function nextStage() {
+  function nextStage() {
     const lv = L();
+    state.awaitNext = false;
+    say("");
+    botEl.dataset.face = "idle";
     state.stage = 1;
     state.pick = null;
     state.placed[state.at] = (lv.demo || []).map(d => ({ set: 0, ...d }));
@@ -964,6 +997,8 @@ export function mountHarness(root) {
     state.hints = 3;
     state.pick = null;
     state.armed = null;
+    state.awaitNext = false;
+    say("");
     const lv = LEVELS[i];
     state.stage = lv.mode === "worked" && !state.stars[i] ? 0 : 1;
     if (state.stage === 0) state.placed[i] = [];
