@@ -1,42 +1,39 @@
-// The board: draws a level, lets the player place chips, and plays back the
-// engine's event list. Progress lives in localStorage under one key.
+// The board is a diagram: the model in the middle, six branches of harness
+// parts around it. The player picks a job, connects parts, runs it, and reads
+// where it broke. Progress lives in localStorage under one key.
 
-import { simulate, TOOLS } from "./engine.js";
-import { LEVELS, CHAPTERS } from "./levels.js";
-import { CHIPS, FAILS, NOTES, LAZY_SETS } from "./plugins.js";
+import { simulate } from "./engine.js";
+import { JOBS } from "./jobs.js";
+import { BRANCHES, PARTS, ORDER, FAILS } from "./world.js";
 import { icon } from "./icons.js";
 import { openBench } from "./bench-ui.js";
 import { openDrill } from "./drill.js";
-import { makeDraggable } from "./drag.js";
 
-const KEY = "ah:v1";
-const GEMS = { a: 0, b: 1, c: 2, d: 3, e: 4 };
-const FAMILY = {
-  gate: "safe",
-  wall: "safe",
-  sandbox: "safe",
-  rewind: "safe",
-  shield: "safe",
-  stop: "safe",
-  trim: "ctx",
-  compact: "ctx",
-  pin: "ctx",
-  note: "ctx",
-  scout: "ctx",
-  fan: "scale",
-  cache: "scale",
-  router: "scale",
-};
+const KEY = "ah:v2";
+const ALL = Object.keys(PARTS);
 const FACE = {
-  noloop: "confused",
   notool: "confused",
-  loop: "confused",
+  lostthread: "confused",
+  unknown: "confused",
   amnesia: "confused",
-  forgot: "dizzy",
+  loop: "confused",
+  lostplace: "dizzy",
   skipped: "dizzy",
   runaway: "dizzy",
+  overflow: "dizzy",
   injected: "alarm",
   damage: "alarm",
+  unapproved: "alarm",
+};
+// How long each kind of step holds during a run, in ms. Steps that put words
+// in the bot's bubble hold long enough to read them.
+const PACE = {
+  start: 350,
+  turn: 340,
+  signal: 380,
+  drop: 300,
+  bubble: 900,
+  bubbleStays: 1700,
 };
 
 const h = (tag, cls, html) => {
@@ -46,19 +43,10 @@ const h = (tag, cls, html) => {
   return e;
 };
 const wait = ms => new Promise(r => setTimeout(r, ms));
+const reduced = () =>
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const branchOf = id => BRANCHES.find(b => b.id === PARTS[id].branch);
 
-// How long each kind of step holds during a run, in ms. Steps that put words
-// in the bot's bubble hold long enough to read them.
-const PACE = {
-  start: 350,
-  turn: 360,
-  hop: 380,
-  fan: 260,
-  drop: 320,
-  squash: 500,
-  bubble: 900,
-  bubbleStays: 1700,
-};
 function load() {
   try {
     return JSON.parse(localStorage.getItem(KEY) || "null") ?? {};
@@ -72,29 +60,29 @@ export function mountHarness(root) {
   root.dataset.ready = "1";
 
   const saved = load();
+  const everything = new URLSearchParams(location.search).has("all");
   const state = {
-    stars: saved.stars || [],
-    seen: saved.seen || {},
-    placed: saved.placed || {},
+    owned: everything ? [...ALL] : saved.owned || [],
+    seen: everything ? BRANCHES.map(b => b.id) : saved.seen || [],
+    stars: saved.stars || {},
+    on: saved.on || {},
+    at: saved.at || JOBS[0].id,
     sound: !!saved.sound,
-    at: 0,
-    stage: 1,
-    armed: null,
     running: false,
     fast: false,
     hints: 3,
-    pick: null,
     runId: 0,
   };
-  const unlockAll = new URLSearchParams(location.search).has("all");
   const save = () => {
     try {
       localStorage.setItem(
         KEY,
         JSON.stringify({
-          stars: state.stars,
+          owned: state.owned,
           seen: state.seen,
-          placed: state.placed,
+          stars: state.stars,
+          on: state.on,
+          at: state.at,
           sound: state.sound,
         })
       );
@@ -102,12 +90,15 @@ export function mountHarness(root) {
       // private mode: play on without saving
     }
   };
-  const unlocked = i => unlockAll || i === 0 || state.stars[i - 1] > 0;
-  const firstOpen = () => {
-    let i = 0;
-    while (i < LEVELS.length - 1 && state.stars[i] > 0) i++;
-    return i;
-  };
+
+  const job = () => JOBS.find(j => j.id === state.at) || JOBS[0];
+  const owns = id => state.owned.includes(id);
+  const earned = () => Object.values(state.stars).reduce((n, s) => n + s, 0);
+  const spent = () =>
+    everything ? 0 : state.owned.reduce((n, id) => n + PARTS[id].price, 0);
+  const bank = () => earned() - spent();
+  const wired = () => (state.on[state.at] ||= [...state.owned]);
+  const isOn = id => wired().includes(id);
 
   // ---------- sound ----------
   let ctx;
@@ -132,11 +123,13 @@ export function mountHarness(root) {
   // ---------- skeleton ----------
   root.innerHTML = "";
   const wrap = h("div", "ah-wrap");
-  const levelsEl = h("nav", "ah-levels");
-  levelsEl.setAttribute("aria-label", "Levels");
   const head = h("div", "ah-head");
-  const nameEl = h("h2", "ah-name");
-  const starsEl = h("div", "ah-stars");
+  const nameEl = h(
+    "h2",
+    "ah-name",
+    "<small>Agent = Model + Harness</small>Harness"
+  );
+  const bankEl = h("div", "ah-bank");
   const tools = h("div", "ah-tools");
   const mkTool = (name, label, fn) => {
     const b = h("button", "ah-round", icon(name));
@@ -147,22 +140,33 @@ export function mountHarness(root) {
     tools.append(b);
     return b;
   };
-  head.append(nameEl, starsEl, tools);
+  head.append(nameEl, bankEl, tools);
 
   const board = h("div", "ah-board");
   const tipEl = h("p", "ah-tip");
   tipEl.setAttribute("aria-live", "polite");
   const heartsEl = h("div", "ah-hearts");
-  const track = h("div", "ah-track");
-  const botEl = h(
+  const map = h("div", "ah-map");
+  const wires = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  wires.setAttribute("class", "ah-wires");
+  wires.setAttribute("aria-hidden", "true");
+  const modelEl = h(
     "div",
-    "ah-bot",
-    `<span class="ah-ant"></span><span class="ah-body"><span class="ah-visor"><i></i><i></i></span></span><span class="ah-bubble"></span>`
+    "ah-model",
+    `<div class="ah-bot" data-face="idle"><span class="ah-ant"></span><span class="ah-body"><span class="ah-visor"><i></i><i></i></span></span><span class="ah-bubble"></span></div><b>Model</b>`
   );
-  botEl.dataset.face = "idle";
-  const rack = h("button", "ah-rack");
-  rack.type = "button";
-  rack.dataset.sock = "bot";
+  const botEl = modelEl.querySelector(".ah-bot");
+  const dot = h("div", "ah-dot");
+  map.append(wires);
+  const branchEls = {};
+  for (const b of BRANCHES) {
+    const e = h("section", `ah-branch ah-b-${b.id}`);
+    e.dataset.branch = b.id;
+    branchEls[b.id] = e;
+    map.append(e);
+  }
+  map.append(modelEl, dot);
+
   const winHead = h("div", "ah-winhead");
   const winEl = h("div", "ah-win");
   const cellsEl = h("div", "ah-cells");
@@ -173,9 +177,8 @@ export function mountHarness(root) {
     "ah-meter",
     `<div class="ah-bar"><span class="ah-fillbar"></span><span class="ah-partick"></span></div><div class="ah-nums"><span class="ah-tok"> </span><span class="ah-par"></span></div>`
   );
-  board.append(tipEl, heartsEl, track, rack, winHead, winEl, meter);
+  board.append(tipEl, heartsEl, map, winHead, winEl, meter);
 
-  const tray = h("div", "ah-tray");
   const actions = h("div", "ah-actions");
   const mkBtn = (cls, ic, label) => {
     const b = h("button", `ah-btn ${cls}`, `${icon(ic)}<span>${label}</span>`);
@@ -184,12 +187,15 @@ export function mountHarness(root) {
     return b;
   };
   const hintBtn = mkBtn("", "bulb", "Hint");
-  const clearBtn = mkBtn("", "x", "Clear");
+  const trimBtn = mkBtn("", "x", "All off");
   const runBtn = mkBtn("ah-run", "play", "Run");
+
+  const jobsEl = h("nav", "ah-jobs");
+  jobsEl.setAttribute("aria-label", "Jobs");
 
   const overlay = h("div", "ah-overlay");
   overlay.hidden = true;
-  wrap.append(levelsEl, head, board, tray, actions);
+  wrap.append(head, board, actions, jobsEl);
   root.append(wrap, overlay);
 
   const notesBtn = mkTool("book", "Field notes", () => showNotes());
@@ -209,365 +215,136 @@ export function mountHarness(root) {
   };
   syncSound();
 
-  // ---------- helpers on the current level ----------
-  const L = () => LEVELS[state.at];
-  const mine = () => (state.placed[state.at] ||= []);
-  const all = () => [...L().pre, ...mine()];
-  const seenOf = i => ((state.seen[state.at] ||= {})[i] ||= {});
-  const setsOf = chip =>
-    TOOLS.includes(chip) && L().lazy ? LAZY_SETS : CHIPS[chip].sets;
-  const sockType = at =>
-    at === "bot" || at === "flag" || at === "start" || at === "trap"
-      ? at
-      : at[0] === "c"
-        ? "cell"
-        : "tile";
-  const left = chip =>
-    (L().tray[chip] || 0) - mine().filter(p => p.chip === chip).length;
-  const canPlace = (chip, at) => {
-    if (!CHIPS[chip].where.includes(sockType(at))) return false;
-    if (
-      at[0] === "t" &&
-      at !== "trap" &&
-      L().tiles[+at.slice(1)].tool === "sleep"
-    )
-      return false;
-    return !all().some(p => p.chip === chip && p.at === at);
-  };
-  const full = () => L().slots && mine().length >= L().slots;
-
-  function place(chip, at, from) {
-    if (state.running || state.stage === 0) return false;
-    if (!canPlace(chip, at)) return false;
-    if (from) {
-      from.at = at;
-      state.settle = from;
-    } else {
-      if (left(chip) <= 0 || full()) return false;
-      if (chip === "compact")
-        state.placed[state.at] = mine().filter(p => p.chip !== "compact");
-      state.settle = { chip, at, set: 0 };
-      mine().push(state.settle);
-    }
-    state.armed = null;
-    blip(520, 0.05, "triangle");
-    save();
-    draw();
-    return true;
-  }
-  function tapPlaced(p) {
-    if (state.running || p.lock || state.stage === 0) return;
-    const sets = setsOf(p.chip);
-    if (p.set < sets.length - 1) p.set++;
-    else state.placed[state.at] = mine().filter(x => x !== p);
-    blip(440, 0.04, "triangle");
-    save();
-    draw();
-  }
-
   // ---------- drawing ----------
-  function chipEl(p, mini) {
-    const fam = TOOLS.includes(p.chip) ? "tool" : FAMILY[p.chip] || "core";
-    const sets = setsOf(p.chip);
-    const label = sets[p.set || 0];
+  function partEl(id) {
+    const P = PARTS[id];
+    const own = owns(id);
     const b = h(
-      p.lock ? "span" : "button",
-      `ah-chip ah-${fam}${mini ? " ah-mini" : ""}${p.lock ? " ah-lock" : ""}`,
-      `${icon(p.chip)}${label ? `<em>${label}</em>` : ""}`
+      "button",
+      `ah-part${own ? (isOn(id) ? " ah-on" : " ah-off") : " ah-locked"}`,
+      `${icon(own ? id : "lock")}<span>${P.name}</span>${own ? "" : `<u>${P.price ? `★${P.price}` : "free"}</u>`}`
     );
-    if (!p.lock) b.type = "button";
-    const name = CHIPS[p.chip].name;
-    b.title = name + (label ? ` (${label})` : "");
+    b.type = "button";
+    b.dataset.part = id;
     b.setAttribute(
       "aria-label",
-      `${name}${label ? `, ${label}` : ""}${p.lock ? ", fixed" : ""}`
+      own
+        ? `${P.name}, ${isOn(id) ? "connected" : "disconnected"}`
+        : `${P.name}, locked, ${P.price ? `${P.price} stars` : "free"}`
     );
-    b.dataset.chip = p.chip;
+    if (own) b.setAttribute("aria-pressed", String(isOn(id)));
     return b;
-  }
-
-  // A chip the player has put down: tap to change its setting or take it
-  // back, drag to move it.
-  function placedChip(p, mini) {
-    const e = chipEl(p, mini);
-    if (p.lock) return e;
-    if (state.settle === p) e.classList.add("ah-settle");
-    e.addEventListener("click", ev => {
-      if (state.armed) return;
-      ev.stopPropagation();
-      tapPlaced(p);
-    });
-    draggable(e, p.chip, p);
-    return e;
-  }
-
-  function draggable(el, chip, placedRef) {
-    makeDraggable(el, {
-      host: root,
-      canStart: () => !state.running && state.stage !== 0 && !el.disabled,
-      onStart: () => {
-        state.armed = chip;
-        syncArmed();
-        el.classList.remove("ah-armed");
-      },
-      onDrop: under => {
-        const sock = under?.closest("[data-sock]");
-        state.armed = null;
-        if (sock && place(chip, sock.dataset.sock, placedRef)) return true;
-        if (placedRef && !sock) {
-          // dropped off the board: back to the tray
-          state.placed[state.at] = mine().filter(x => x !== placedRef);
-          save();
-          draw();
-          return true;
-        }
-        syncArmed();
-        return false;
-      },
-    });
-  }
-
-  function gemEl(g, exact, cls = "") {
-    const e = h(
-      "i",
-      `ah-gem ah-g${GEMS[g] ?? 0}${exact ? " ah-exact" : ""} ${cls}`
-    );
-    return e;
-  }
-
-  function tileEl(i) {
-    const T = L().tiles[i];
-    const seen = seenOf(i);
-    const b = h("button", "ah-tile");
-    b.type = "button";
-    b.dataset.sock = "t" + i;
-    const known = k => !T.hide || seen[k];
-    const marks = [];
-    if (T.danger && known("danger")) b.classList.add("ah-danger");
-    if (T.amber) b.classList.add("ah-amber");
-    if (T.dull) b.classList.add("ah-dull");
-    if (T.spiky && known("spiky")) b.classList.add("ah-spiky");
-    if (T.err && known("err")) marks.push("!");
-    if ((T.bad || T.corrupt) && seen.bad) marks.push("✗");
-    if (T.dull) marks.push("z");
-    const needs = (T.needs || [])
-      .map(g => gemEl(g, false, "ah-need").outerHTML)
-      .join("");
-    // pips: one per cell, with the gem sitting where it will land
-    let pips = "";
-    const at = T.at || "head";
-    const gi =
-      !T.gem || !known("at")
-        ? -1
-        : at === "head"
-          ? 0
-          : at === "tail"
-            ? T.size - 1
-            : Math.floor(T.size / 2);
-    for (let k = 0; k < T.size; k++)
-      pips +=
-        k === gi ? gemEl(T.gem, T.exact).outerHTML : `<i class="ah-pip"></i>`;
-    const mystery =
-      T.gem && gi < 0 ? gemEl(T.gem, T.exact, "ah-float").outerHTML : "";
-    b.innerHTML = `<span class="ah-needs">${needs}</span>${icon(T.tool)}<span class="ah-marks">${marks.join("")}</span>${mystery}<span class="ah-pips">${pips}</span>`;
-    const bits = [CHIPS[T.tool]?.name || "New session"];
-    if (T.size) bits.push(`${T.size} cells`);
-    if (T.needs?.length)
-      bits.push(`needs ${T.needs.length} fact${T.needs.length > 1 ? "s" : ""}`);
-    b.setAttribute("aria-label", `Tile ${i + 1}: ${bits.join(", ")}`);
-    return b;
-  }
-
-  function col(sock, tile, extra) {
-    const c = h("div", "ah-col");
-    const slot = h("div", "ah-slot");
-    for (const p of all().filter(p => p.at === sock))
-      slot.append(placedChip(p, true));
-    c.append(tile, slot);
-    if (extra) c.append(extra);
-    return c;
   }
 
   function draw() {
-    const lv = L();
-    // level chips
-    levelsEl.innerHTML = "";
-    LEVELS.forEach((x, i) => {
-      const b = h("button", "ah-lv", String(i + 1));
-      b.type = "button";
-      if (i === state.at) b.setAttribute("aria-current", "true");
-      if (state.stars[i]) b.dataset.stars = state.stars[i];
-      if (!unlocked(i)) b.disabled = true;
-      if (i > 0 && x.chapter !== LEVELS[i - 1].chapter)
-        b.classList.add("ah-gap");
-      b.setAttribute(
-        "aria-label",
-        `Level ${i + 1}, ${x.name}${state.stars[i] ? `, ${state.stars[i]} stars` : ""}`
+    const J = job();
+    bankEl.innerHTML = `${icon("star")}<b>${bank()}</b>`;
+    bankEl.setAttribute("aria-label", `${bank()} stars to spend`);
+    notesBtn.dataset.count = state.owned.length || "";
+
+    for (const b of BRANCHES) {
+      const e = branchEls[b.id];
+      const seen = state.seen.includes(b.id);
+      e.classList.toggle("ah-fog", !seen);
+      e.innerHTML = "";
+      if (!seen) continue;
+      e.append(h("h3", "", b.name));
+      const parts = h("div", "ah-parts");
+      for (const id of ORDER[b.id]) parts.append(partEl(id));
+      e.append(parts);
+    }
+
+    // jobs
+    jobsEl.innerHTML = "";
+    for (const j of JOBS) {
+      const s = state.stars[j.id] || 0;
+      const b = h(
+        "button",
+        "ah-job",
+        `<span>${j.name}</span><i>${[0, 1, 2].map(k => `<em class="${k < s ? "ah-on" : ""}">${icon("star")}</em>`).join("")}</i>`
       );
-      b.addEventListener("click", () => go(i));
-      levelsEl.append(b);
-    });
-    nameEl.innerHTML = `<small>${CHAPTERS[lv.chapter]}</small>${lv.name}`;
-    drawStars(state.stars[state.at] || 0);
-    notesBtn.dataset.count = state.stars.filter(Boolean).length || "";
-
-    // track
-    track.querySelectorAll(".ah-col").forEach(e => e.remove());
-    const start = h("button", "ah-tile ah-start", icon("task"));
-    start.type = "button";
-    start.dataset.sock = "start";
-    start.setAttribute("aria-label", "The task");
-    track.append(col("start", start));
-    lv.tiles.forEach((T, i) => {
-      let extra;
-      if (lv.trap === i) {
-        const trap = h("button", "ah-tile ah-trap", icon("trap"));
-        trap.type = "button";
-        trap.dataset.sock = "trap";
-        trap.setAttribute("aria-label", "Somewhere it should never go");
-        const s = h("div", "ah-slot");
-        for (const p of all().filter(p => p.at === "trap"))
-          s.append(placedChip(p, true));
-        extra = h("div", "ah-trapwrap");
-        extra.append(trap, s);
-      }
-      track.append(col("t" + i, tileEl(i), extra));
-    });
-    const flag = h("button", "ah-tile ah-flag", icon("flag"));
-    flag.type = "button";
-    flag.dataset.sock = "flag";
-    flag.setAttribute("aria-label", "Done");
-    track.append(col("flag", flag));
-    if (!botEl.isConnected) track.append(botEl);
-
-    // rack
-    rack.innerHTML = `<span class="ah-racklabel">harness</span>`;
-    for (const p of all().filter(p => p.at === "bot"))
-      rack.append(placedChip(p));
+      b.type = "button";
+      if (j.id === state.at) b.setAttribute("aria-current", "true");
+      if (s) b.dataset.stars = s;
+      b.setAttribute("aria-label", `${j.name}${s ? `, ${s} of 3 stars` : ""}`);
+      b.addEventListener("click", () => go(j.id));
+      jobsEl.append(b);
+    }
 
     // window
     cellsEl.innerHTML = "";
-    cellsEl.style.setProperty("--n", lv.window);
-    blocksEl.style.setProperty("--n", lv.window);
-    const cAt = all().find(p => p.chip === "compact");
-    for (let k = 1; k <= lv.window; k++) {
-      const c = h("button", "ah-cell");
-      c.type = "button";
-      c.dataset.sock = "c" + k;
-      c.setAttribute("aria-label", `Window cell ${k}`);
-      if (cAt && cAt.at === "c" + k) {
-        c.classList.add("ah-compact-here");
-        c.innerHTML = icon("compact");
-        c.addEventListener("click", ev => {
-          if (state.armed) return;
-          ev.stopPropagation();
-          tapPlaced(cAt);
-        });
-      }
-      cellsEl.append(c);
-    }
+    cellsEl.style.setProperty("--n", J.window);
+    blocksEl.style.setProperty("--n", J.window);
+    for (let k = 0; k < J.window; k++) cellsEl.append(h("i", "ah-cell"));
 
-    // hearts
-    const hp = lv.hearts ?? 2;
-    const showHearts =
-      lv.tiles.some(t => t.danger || t.amber) || lv.trap != null;
-    heartsEl.hidden = !showHearts;
-    heartsEl.innerHTML = Array.from({ length: hp }, () => icon("heart")).join(
-      ""
-    );
+    const risky = J.steps.some(s => s.risky || s.hostile);
+    heartsEl.hidden = !risky;
+    heartsEl.innerHTML = Array.from({ length: J.hearts ?? 1 }, () =>
+      icon("heart")
+    ).join("");
 
-    // tray
-    tray.innerHTML = "";
-    const kinds = Object.keys(lv.tray);
-    tray.hidden = !kinds.length;
-    kinds.forEach((chip, n) => {
-      const cnt = left(chip);
-      const e = chipEl({ chip, set: 0 });
-      e.classList.add("ah-traychip");
-      e.innerHTML += `<b>${CHIPS[chip].name}</b>${lv.tray[chip] > 1 ? `<u>${cnt}</u>` : ""}`;
-      e.dataset.key = n + 1;
-      if (cnt <= 0 || state.stage === 0) e.disabled = true;
-      if (state.armed === chip) e.classList.add("ah-armed");
-      e.addEventListener("click", () => {
-        state.armed = state.armed === chip ? null : chip;
-        syncArmed();
-      });
-      draggable(e, chip, null);
-      tray.append(e);
-    });
-    if (lv.slots) {
-      const s = h("span", "ah-slots", `${mine().length}/${lv.slots}`);
-      tray.append(s);
-    }
-
-    tipEl.textContent = state.stage === 0 ? lv.tip : lv.tip2 || lv.tip || "";
-    tipEl.classList.remove("ah-bad", "ah-good");
-    hintBtn.disabled = state.stage === 0 || !lv.sol || state.hints <= 0;
+    hintBtn.disabled = state.hints <= 0;
     hintBtn.querySelector("span").textContent =
       state.hints < 3 ? `Hint ${state.hints}` : "Hint";
-    clearBtn.disabled = state.stage === 0 || !mine().length;
-    runBtn.disabled = state.stage === 0 && lv.predict && !state.pick;
+    const any = wired().length > 0;
+    trimBtn.querySelector("span").textContent = any ? "All off" : "All on";
+    trimBtn.disabled = !state.owned.length;
 
-    state.settle = null;
-    restWindow();
-    syncArmed();
-    requestAnimationFrame(() => moveBot("start", true));
+    rest();
+    requestAnimationFrame(drawWires);
   }
 
-  // What a spot on the board is, in one line. Shown when it's tapped.
-  function describe(sock) {
-    if (sock === "start")
-      return "The task. It sits in the window from the first turn.";
-    if (sock === "flag")
-      return "Done. The bot gets here by answering instead of calling a tool.";
-    if (sock === "trap") return "Somewhere the bot should never go.";
-    const i = +sock.slice(1);
-    const T = L().tiles[i];
-    if (T.tool === "sleep")
-      return "End of the session. The window starts over; the task is given again.";
-    const seen = seenOf(i);
-    const known = k => !T.hide || seen[k];
-    const cells = n => `${n} cell${n === 1 ? "" : "s"}`;
-    let out = `${CHIPS[T.tool].name}: the result takes ${cells(T.size)}`;
-    if (T.gem) {
-      out += T.exact ? " and holds an exact detail" : " and holds a fact";
-      if (known("at") && T.size > 2)
-        out += ` ${{ head: "at the start", tail: "at the end", mid: "in the middle" }[T.at || "head"]}`;
-    }
-    out += ".";
-    const n = T.needs?.length;
-    if (n)
-      out += ` Needs ${n === 1 ? "one fact" : `${n} facts`} in the window first.`;
-    if (T.danger && known("danger")) out += " Destructive.";
-    if (T.amber) out += " Needs a person's say-so.";
-    if (T.dull) out += " Dull, so easy to skip.";
-    if (T.spiky && known("spiky")) out += " This one carries orders.";
-    if (T.err && known("err")) out += " It fails before it works.";
-    if ((T.bad || T.corrupt) && seen.bad) out += " This edit went wrong.";
-    return out;
+  function ask() {
+    tipEl.textContent = `“${job().ask}”`;
+    tipEl.classList.remove("ah-bad");
   }
 
-  function drawStars(n, pop) {
-    starsEl.innerHTML = [0, 1, 2]
-      .map(
-        i =>
-          `<span class="${i < n ? "ah-on" : ""}${pop ? " ah-pop" : ""}" style="--d:${i * 90}ms">${icon("star")}</span>`
-      )
-      .join("");
-    starsEl.setAttribute("aria-label", `${n} of 3 stars`);
-  }
-
-  // The window as it would be before the first turn.
-  function restWindow() {
-    const r = simulate(L(), all());
-    const first = r.events[0];
+  // The window as it will be before the first turn.
+  function rest() {
+    const first = simulate(job(), wired()).events[0];
     renderWin(first.win, false);
     setMeter(0);
-    winHead.innerHTML = `<span>window</span><span>${first.fill}/${L().window}</span>`;
+  }
+
+  const centre = el => {
+    const a = el.getBoundingClientRect();
+    const m = map.getBoundingClientRect();
+    return {
+      x: a.left - m.left + a.width / 2,
+      y: a.top - m.top + a.height / 2,
+      w: a.width,
+      h: a.height,
+    };
+  };
+
+  // One arrow per branch that has something connected. Each end stops at the
+  // edge of its box.
+  function drawWires() {
+    const m = map.getBoundingClientRect();
+    wires.setAttribute("viewBox", `0 0 ${m.width} ${m.height}`);
+    const to = centre(modelEl);
+    let out = "";
+    for (const b of BRANCHES) {
+      const live = ORDER[b.id].some(id => owns(id) && isOn(id));
+      if (!state.seen.includes(b.id) || !live) continue;
+      const from = centre(branchEls[b.id]);
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      const edge = box =>
+        Math.min(
+          dx ? (box.w / 2 + 3) / Math.abs(dx) : Infinity,
+          dy ? (box.h / 2 + 3) / Math.abs(dy) : Infinity
+        );
+      const t1 = edge(from);
+      const t2 = edge(to);
+      if (t1 + t2 >= 1) continue;
+      out += `<line class="ah-wire ah-w-${b.id}" x1="${from.x + dx * t1}" y1="${from.y + dy * t1}" x2="${to.x - dx * t2}" y2="${to.y - dy * t2}"/>`;
+    }
+    wires.innerHTML = out;
   }
 
   function renderWin(win, animate = true) {
-    const N = L().window;
+    const N = job().window;
     const have = new Map([...blocksEl.children].map(e => [e.dataset.id, e]));
     let x = 0;
     for (const b of win) {
@@ -579,44 +356,46 @@ export function mountHarness(root) {
         blocksEl.append(e);
       }
       have.delete(String(b.id));
-      e.className = `ah-block ah-k-${b.kind}${e.classList.contains("ah-in") ? " ah-in" : ""}`;
-      if (b.pinned) e.classList.add("ah-pinned");
-      if (b.spiky) e.classList.add("ah-spiked");
+      const fresh = e.classList.contains("ah-in");
+      e.className = `ah-block ah-k-${b.kind}${fresh ? " ah-in" : ""}`;
+      if (b.part && PARTS[b.part])
+        e.classList.add(`ah-c-${PARTS[b.part].branch}`);
+      if (b.hostile) e.classList.add("ah-spiked");
       if (b.shielded) e.classList.add("ah-shielded");
       if (b.red) e.classList.add("ah-red");
-      if (b.lazy) e.classList.add("ah-lazy");
+      if (b.parked) e.classList.add("ah-parked");
       if (x + b.size > N) e.classList.add("ah-over");
       e.style.setProperty("--x", x);
       e.style.setProperty("--w", b.size);
       let inner = "";
-      if (b.kind === "def") inner = icon(b.tool);
-      else if (b.kind === "task") inner = icon("task");
-      else if (b.kind === "todo") inner = icon("todo");
-      else if (b.kind === "notes") inner = icon("note");
-      else if (b.kind === "test") inner = icon(b.red ? "x" : "check");
-      else if (b.kind === "err")
-        inner = `<span class="ah-errmark">${b.count > 1 ? "×" + b.count : "!"}</span>`;
-      if (b.pinned) inner += icon("pin", "ah-pinmark");
-      const gems = b.gems
-        .map(
-          g =>
-            gemEl(
-              g.g,
-              g.exact,
-              b.kind === "result" ? `ah-at-${g.at}` : "ah-loose"
-            ).outerHTML
-        )
-        .join("");
-      e.innerHTML = `${inner}<span class="ah-gems">${gems}</span>`;
+      if (b.kind === "task") inner = icon("task");
+      else if (b.kind === "check") inner = icon(b.red ? "x" : "check");
+      else if (b.kind === "err") inner = `<span class="ah-errmark">!</span>`;
+      else if (b.kind === "summary") inner = icon(b.part || "compact");
+      else if (b.part) inner = icon(b.part);
+      const facts = b.facts.length
+        ? `<span class="ah-gems">${b.facts.map(() => `<i class="ah-gem"></i>`).join("")}</span>`
+        : "";
+      e.innerHTML = inner + facts;
       x += b.size;
     }
     for (const e of have.values()) e.remove();
     const fill = win.reduce((n, b) => n + b.size, 0);
-    winHead.innerHTML = `<span>window</span><span class="${fill > N ? "ah-bad" : ""}">${fill}/${N}</span>`;
+    winHead.innerHTML = `<span>window</span><span class="ah-clock"></span><span class="${fill > N ? "ah-bad" : ""}">${fill}/${N}</span>`;
+    setClock(clock);
+  }
+  let clock = 0;
+  function setClock(turns) {
+    clock = turns;
+    const J = job();
+    const c = winHead.querySelector(".ah-clock");
+    if (!c || !J.deadline) return;
+    c.textContent = `turn ${Math.min(turns, J.deadline + 1)} of ${J.deadline}`;
+    c.classList.toggle("ah-bad", turns > J.deadline);
   }
 
   function setMeter(tok) {
-    const par = L().par;
+    const par = job().par;
     const pct = Math.min(100, (tok / (par * 1.5)) * 100);
     meter.querySelector(".ah-fillbar").style.transform = `scaleX(${pct / 100})`;
     meter.classList.toggle("ah-overpar", tok > par);
@@ -624,35 +403,11 @@ export function mountHarness(root) {
     meter.querySelector(".ah-par").textContent = `par ${par}`;
   }
 
-  function sockEl(at) {
-    return root.querySelector(`[data-sock="${at}"]`);
-  }
-
-  function moveBot(to, instant) {
-    const key = typeof to === "number" ? "t" + to : to;
-    const el = sockEl(key);
-    if (!el) return;
-    const a = el.getBoundingClientRect();
-    const b = track.getBoundingClientRect();
-    const x = a.left - b.left + a.width / 2;
-    const y = a.top - b.top;
-    if (instant) botEl.classList.add("ah-snap");
-    botEl.style.transform = `translate(${x}px, ${y}px)`;
-    if (instant) {
-      void botEl.offsetWidth;
-      botEl.classList.remove("ah-snap");
-    } else {
-      botEl.classList.remove("ah-hop");
-      void botEl.offsetWidth;
-      botEl.classList.add("ah-hop");
-    }
-  }
-
   let sayTimer;
   function say(text) {
     const b = botEl.querySelector(".ah-bubble");
     clearTimeout(sayTimer);
-    b.textContent = text;
+    if (text) b.textContent = text;
     b.classList.toggle("ah-show", !!text);
     if (text)
       sayTimer = setTimeout(
@@ -661,50 +416,143 @@ export function mountHarness(root) {
       );
   }
 
-  function syncArmed() {
-    root.querySelectorAll(".ah-can").forEach(e => e.classList.remove("ah-can"));
-    tray
-      .querySelectorAll(".ah-traychip")
-      .forEach(e =>
-        e.classList.toggle("ah-armed", e.dataset.chip === state.armed)
-      );
-    root.classList.toggle("ah-arming", !!state.armed);
-    if (!state.armed) return;
-    root.querySelectorAll("[data-sock]").forEach(e => {
-      if (canPlace(state.armed, e.dataset.sock)) e.classList.add("ah-can");
-    });
+  const elOf = id =>
+    id === "model" ? modelEl : map.querySelector(`[data-part="${id}"]`);
+  function ping(id) {
+    const e = elOf(id);
+    if (!e) return;
+    e.classList.remove("ah-ping");
+    void e.offsetWidth;
+    e.classList.add("ah-ping");
+  }
+  // A signal travelling from one box to another.
+  function travel(from, to, ms) {
+    const a = elOf(from);
+    const z = elOf(to);
+    if (!a || !z || reduced()) return;
+    const p = centre(a);
+    const q = centre(z);
+    const part = from === "model" ? to : from;
+    dot.className = `ah-dot ah-c-${PARTS[part]?.branch || "action"}`;
+    dot.animate(
+      [
+        { transform: `translate(${p.x}px, ${p.y}px) scale(0.6)`, opacity: 0 },
+        { opacity: 1, offset: 0.15 },
+        { opacity: 1, offset: 0.85 },
+        { transform: `translate(${q.x}px, ${q.y}px) scale(1)`, opacity: 0 },
+      ],
+      { duration: ms, easing: "cubic-bezier(0.45, 0, 0.25, 1)" }
+    );
   }
 
-  // ---------- input ----------
-  root.addEventListener("click", ev => {
-    const s = ev.target.closest("[data-sock]");
+  // ---------- parts ----------
+  function describe(id) {
+    const P = PARTS[id];
+    tipEl.textContent = `${P.name}${isOn(id) ? "" : " (off)"}. ${P.does}`;
+    tipEl.classList.remove("ah-bad");
+  }
+
+  function toggle(id) {
+    const set = wired();
+    if (set.includes(id)) {
+      // anything that leans on this part goes with it
+      state.on[state.at] = set.filter(x => x !== id && PARTS[x].needs !== id);
+    } else {
+      set.push(id);
+      const dep = PARTS[id].needs;
+      if (dep && owns(dep) && !set.includes(dep)) set.push(dep);
+    }
+    blip(isOn(id) ? 520 : 400, 0.05, "triangle");
+    save();
+    draw();
+    describe(id);
+  }
+
+  function unlock(id) {
+    state.owned.push(id);
+    const set = wired();
+    if (!set.includes(id)) set.push(id);
+    const dep = PARTS[id].needs;
+    if (dep && owns(dep) && !set.includes(dep)) set.push(dep);
+    blip(660, 0.09);
+    setTimeout(() => blip(880, 0.12), 90);
+    save();
+    closeOverlay();
+    draw();
+    describe(id);
+    elOf(id)?.classList.add("ah-new");
+  }
+
+  function offer(id) {
+    const P = PARTS[id];
+    const B = branchOf(id);
+    const body = sheet(P.name);
+    const dep = P.needs && !owns(P.needs) ? PARTS[P.needs].name : null;
+    const short = bank() < P.price;
+    body.innerHTML = `<p class="ah-sub">${B.name} · ${B.ask}</p>${noteCard(id)}`;
+    const b = h(
+      "button",
+      "ah-btn ah-run ah-unlock",
+      `<span>${P.price ? `Unlock for ★${P.price}` : "Take it, it's free"}</span>`
+    );
+    b.type = "button";
+    b.disabled = short || !!dep;
+    b.addEventListener("click", () => unlock(id));
+    body.append(b);
+    if (dep || short)
+      body.append(
+        h(
+          "p",
+          "ah-sub ah-short",
+          dep
+            ? `Needs ${dep} first.`
+            : `You have ★${bank()}. Clear a job, or beat par on one, to earn more.`
+        )
+      );
+    if (!b.disabled) b.focus();
+  }
+
+  map.addEventListener("click", ev => {
     if (state.running) return;
-    if (state.awaitNext) return;
-    if (state.stage === 0 && L().predict && s && s.dataset.sock !== "bot") {
-      state.pick = s.dataset.sock;
-      root
-        .querySelectorAll(".ah-pick")
-        .forEach(e => e.classList.remove("ah-pick"));
-      s.classList.add("ah-pick");
-      runBtn.disabled = false;
-      blip(600, 0.05);
-      return;
-    }
-    if (!state.armed) {
-      const tile = ev.target.closest(".ah-tile");
-      if (tile) {
-        tipEl.textContent = describe(tile.dataset.sock);
-        tipEl.classList.remove("ah-bad");
-      }
-      return;
-    }
-    if (s && place(state.armed, s.dataset.sock)) return;
-    if (!ev.target.closest(".ah-traychip")) {
-      state.armed = null;
-      syncArmed();
-    }
+    const p = ev.target.closest("[data-part]");
+    if (!p) return;
+    const id = p.dataset.part;
+    if (owns(id)) toggle(id);
+    else offer(id);
   });
 
+  hintBtn.addEventListener("click", () => {
+    if (state.running) return;
+    const J = job();
+    const want = J.sol.find(id => !owns(id) || !isOn(id));
+    state.hints--;
+    draw();
+    if (!want) {
+      const extra = wired().filter(id => !J.sol.includes(id));
+      tipEl.textContent = extra.length
+        ? `Everything this job needs is connected. So is ${PARTS[extra[0]].name}, which it can do without.`
+        : "That's the leanest harness for this job. Run it.";
+      return;
+    }
+    reveal(PARTS[want].branch);
+    tipEl.textContent = owns(want)
+      ? `${PARTS[want].name} is switched off.`
+      : `${PARTS[want].name} would help here. It's in ${branchOf(want).name}.`;
+    elOf(want)?.classList.add("ah-hinted");
+  });
+  trimBtn.addEventListener("click", () => {
+    if (state.running) return;
+    state.on[state.at] = wired().length ? [] : [...state.owned];
+    save();
+    draw();
+  });
+  runBtn.addEventListener("click", () => {
+    if (state.running) {
+      state.fast = true;
+      return;
+    }
+    run();
+  });
   const onKey = ev => {
     if (!root.isConnected)
       return document.removeEventListener("keydown", onKey);
@@ -713,91 +561,37 @@ export function mountHarness(root) {
       return;
     }
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
-    if (/^[1-9]$/.test(ev.key)) {
-      const e = tray.querySelector(`[data-key="${ev.key}"]`);
-      if (e && !e.disabled) {
-        state.armed = e.dataset.chip;
-        syncArmed();
-        (root.querySelector(".ah-can") || e).focus();
-      }
-    } else if (ev.key === "ArrowRight" || ev.key === "ArrowLeft") {
-      const list = [
-        ...root.querySelectorAll(state.armed ? ".ah-can" : "[data-sock]"),
-      ];
-      if (!list.length) return;
-      const i = list.indexOf(document.activeElement);
-      const n = ev.key === "ArrowRight" ? i + 1 : i - 1;
-      list[(n + list.length) % list.length].focus();
-      ev.preventDefault();
-    } else if (ev.key === "Escape") {
-      state.armed = null;
-      syncArmed();
-    } else if (ev.key === "r" || ev.key === "R") runBtn.click();
+    if (ev.key === "r" || ev.key === "R") runBtn.click();
   };
   document.addEventListener("keydown", onKey);
 
-  hintBtn.addEventListener("click", () => {
-    const lv = L();
-    if (!lv.sol || state.running) return;
-    const want = lv.sol.find(
-      s =>
-        !mine().some(
-          p =>
-            p.chip === s.chip && p.at === s.at && (p.set || 0) === (s.set || 0)
-        )
-    );
-    if (!want) {
-      tipEl.textContent = "That's the layout. Run it.";
-      return;
-    }
-    state.hints--;
-    draw();
-    const here = mine().find(p => p.chip === want.chip && p.at === want.at);
-    const sets = setsOf(want.chip);
-    tipEl.textContent = here
-      ? `${CHIPS[want.chip].name}: try "${sets[want.set || 0] || "plain"}".`
-      : `${CHIPS[want.chip].name} goes where it's glowing${sets[want.set || 0] ? `, set to "${sets[want.set]}"` : ""}.`;
-    sockEl(want.at)?.classList.add("ah-hinted");
-    tray
-      .querySelector(`[data-chip="${want.chip}"]`)
-      ?.classList.add("ah-hinted");
-  });
-  clearBtn.addEventListener("click", () => {
-    if (state.running) return;
-    state.placed[state.at] = [];
+  function reveal(branch) {
+    if (state.seen.includes(branch)) return false;
+    state.seen.push(branch);
     save();
     draw();
-  });
-  runBtn.addEventListener("click", () => {
-    if (state.awaitNext) return nextStage();
-    if (state.running) {
-      state.fast = true;
-      return;
-    }
-    run();
-  });
+    branchEls[branch].classList.add("ah-appear");
+    return true;
+  }
 
   // ---------- running ----------
   async function run() {
-    const lv = L();
+    const J = job();
     const id = ++state.runId;
     state.running = true;
     state.fast = false;
-    state.armed = null;
-    syncArmed();
     root.classList.add("ah-running");
     runBtn.querySelector("span").textContent = "Skip";
-    tipEl.classList.remove("ah-bad", "ah-good");
+    ask();
     root
-      .querySelectorAll(".ah-hinted,.ah-shake")
-      .forEach(e => e.classList.remove("ah-hinted", "ah-shake"));
-    const res = simulate(lv, all());
+      .querySelectorAll(".ah-hinted,.ah-new,.ah-appear")
+      .forEach(e => e.classList.remove("ah-hinted", "ah-new", "ah-appear"));
+    const res = simulate(J, wired());
     const nap = ms => (state.fast ? Promise.resolve() : wait(ms));
-    let hearts = lv.hearts ?? 2;
     botEl.dataset.face = "idle";
     say("");
-    moveBot("start", true);
     blocksEl.innerHTML = "";
+    setClock(0);
 
     for (const e of res.events) {
       if (id !== state.runId) return;
@@ -812,76 +606,68 @@ export function mountHarness(root) {
           void winEl.offsetWidth;
           winEl.classList.add("ah-scan");
           setMeter(e.tokens);
+          setClock(e.turns);
           const plus = h("span", "ah-plus", `+${e.cost}`);
-          if (e.small) plus.classList.add("ah-small");
-          if (e.cached) plus.classList.add("ah-cached");
+          if (e.small || e.cached) plus.classList.add("ah-cached");
           meter.querySelector(".ah-tok").append(plus);
           setTimeout(() => plus.remove(), 900);
-          if (e.what === "compact") say("squash");
-          else if (e.what === "load") say("open manual");
-          else if (e.what === "delegate") say("send scout");
+          const words = {
+            compact: "squash",
+            load: "open the guide",
+            delegate: "send helpers",
+          }[e.what];
+          if (words) say(words);
           else if (e.small) say("small model");
+          if (e.small) ping("router");
+          if (e.cached) ping("cache");
           blip(300 + Math.min(e.fill, 20) * 18, 0.05);
-          await nap(e.what === "turn" && !e.small ? PACE.turn : PACE.bubble);
+          await nap(words || e.small ? PACE.bubble : PACE.turn);
           break;
         }
-        case "hop":
-          botEl.dataset.face = e.back
-            ? "confused"
-            : e.to === "trap"
-              ? "alarm"
-              : "idle";
-          moveBot(e.to);
-          blip(e.to === "trap" ? 180 : 500, 0.06, "triangle");
-          await nap(e.fan ? PACE.fan : PACE.hop);
-          break;
-        case "reach":
-          botEl.dataset.face = "confused";
-          await nap(PACE.bubble);
+        case "signal":
+          if (!state.fast) travel(e.from, e.to, PACE.signal);
+          ping(e.from === "model" ? e.to : e.from);
+          blip(e.from === "model" ? 500 : 420, 0.05, "triangle");
+          await nap(PACE.signal);
           break;
         case "drop":
-        case "note":
-        case "load":
+        case "compact":
           renderWin(e.win);
           blip(380, 0.04, "square", 0.02);
           await nap(PACE.drop);
           break;
-        case "compact":
+        case "fresh":
           renderWin(e.win);
-          if (e.lost.length || e.lostTask) say("lost detail");
-          await nap(e.lost.length || e.lostTask ? PACE.bubble : PACE.squash);
+          say(
+            {
+              sleep: "new session",
+              loop: "again, clean slate",
+              stateless: "new message, blank slate",
+            }[e.why]
+          );
+          await nap(PACE.bubble);
           break;
         case "rewind":
           renderWin(e.win);
-          say("rewind");
-          moveBot(e.to > 0 ? e.to - 1 : "start");
+          say("rolled back");
           await nap(PACE.bubble);
           break;
-        case "sleep":
-          renderWin(e.win);
-          say("new session");
-          await nap(PACE.bubble);
-          break;
-        case "scout":
-          say(`scout ${e.sub}/${lv.window}`);
-          moveBot(e.tile);
-          await nap(PACE.bubble);
-          break;
-        case "check":
-          say(e.red ? "tests fail" : "tests pass");
-          await nap(PACE.bubble);
+        case "sub":
+          say(`helper ${e.sub}/${J.window}`);
+          await nap(PACE.bubble * 0.7);
           break;
         case "say":
           say(e.text);
+          if (e.part) ping(e.part);
           await nap(PACE.bubble);
           break;
-        case "alt":
-          say("plan B");
-          await nap(PACE.bubble);
-          break;
-        case "skip":
-          say("skip");
-          sockEl("t" + e.tile)?.classList.add("ah-skipped");
+        case "ask":
+          say("may I?");
+          ping("perms");
+          [...heartsEl.children].forEach((x, i) =>
+            x.classList.toggle("ah-gone", i >= Math.max(e.hearts, 0))
+          );
+          blip(240, 0.12, "sawtooth", 0.03);
           await nap(PACE.bubble);
           break;
         case "miss":
@@ -889,128 +675,83 @@ export function mountHarness(root) {
           say("where was it?");
           await nap(PACE.bubble);
           break;
-        case "ask":
-          hearts = e.hearts;
-          say("may I?");
-          [...heartsEl.children].forEach((x, i) =>
-            x.classList.toggle("ah-gone", i >= Math.max(hearts, 0))
-          );
-          blip(240, 0.12, "sawtooth", 0.03);
+        case "skip":
+          say("skip that");
           await nap(PACE.bubble);
           break;
-        case "reveal": {
-          const s = seenOf(e.tile);
-          if (!s[e.what]) {
-            s[e.what] = true;
-            const old = sockEl("t" + e.tile);
-            const fresh = tileEl(e.tile);
-            old.replaceWith(fresh);
-          }
-          break;
-        }
         case "end":
-          await finish(res, e);
+          await finish(res);
           break;
       }
     }
     if (id !== state.runId) return;
     state.running = false;
     root.classList.remove("ah-running");
-    runBtn.querySelector("span").textContent = state.awaitNext ? "Next" : "Run";
+    runBtn.querySelector("span").textContent = "Run";
     save();
   }
 
-  async function finish(res, e) {
-    const lv = L();
+  async function finish(res) {
+    const J = job();
     setMeter(res.tokens);
     if (res.ok) {
       botEl.dataset.face = "happy";
       blip(660, 0.09);
       setTimeout(() => blip(880, 0.12), 90);
-      const worked = lv.mode === "worked" && state.stage === 0;
-      if (worked) {
-        tipEl.textContent = `It gets there: ${res.tokens} tokens in ${res.turns} turns.`;
-        state.awaitNext = true;
-        return;
-      }
-      const best = Math.max(state.stars[state.at] || 0, res.stars);
-      state.stars[state.at] = best;
+      const before = state.stars[J.id] || 0;
+      state.stars[J.id] = Math.max(before, res.stars);
       save();
-      notesBtn.dataset.count = state.stars.filter(Boolean).length;
-      const chip = levelsEl.children[state.at];
-      if (chip) chip.dataset.stars = best;
-      drawStars(res.stars, true);
       await wait(state.fast ? 150 : 600);
-      showCard(res);
-    } else {
-      botEl.dataset.face = FACE[res.reason] || "sad";
-      blip(160, 0.2, "sawtooth", 0.04);
-      const where = res.info.tile;
-      if (where != null && where >= 0)
-        sockEl("t" + where)?.classList.add("ah-shake");
-      if (res.reason === "injected") sockEl("trap")?.classList.add("ah-shake");
-      if (res.reason === "overflow") winEl.classList.add("ah-shake");
-      setTimeout(() => winEl.classList.remove("ah-shake"), 500);
-      let msg = FAILS[res.reason]?.(res.info) || "That didn't work.";
-      if (state.stage === 0) {
-        if (lv.predict) {
-          const hit = lv.predict.includes(state.pick);
-          msg = (hit ? "Called it. " : "Not there. ") + msg;
-        }
-        tipEl.textContent = msg;
-        tipEl.classList.add("ah-bad");
-        state.awaitNext = true;
-        return;
-      }
-      tipEl.textContent = msg;
-      tipEl.classList.add("ah-bad");
+      draw();
+      renderWin(res.events[res.events.length - 1].win, false);
+      setMeter(res.tokens);
+      showCard(res, state.stars[J.id] - before);
+      return;
     }
+    botEl.dataset.face = FACE[res.reason] || "sad";
+    blip(160, 0.2, "sawtooth", 0.04);
+    if (res.reason === "overflow") {
+      winEl.classList.add("ah-shake");
+      setTimeout(() => winEl.classList.remove("ah-shake"), 500);
+    }
+    const F = FAILS[res.reason];
+    const fix = J.fix?.[res.reason] ?? F.fix(res.info);
+    let msg = F.say(res.info);
+    const last = res.events[res.events.length - 1].win;
+    const fresh = reveal(PARTS[fix].branch);
+    if (fresh) {
+      renderWin(last, false);
+      setMeter(res.tokens);
+    }
+    if (owns(fix) && !isOn(fix)) msg += ` ${PARTS[fix].name} is switched off.`;
+    else if (!owns(fix)) {
+      if (J.tier <= 1) {
+        msg += ` ${PARTS[fix].name} would fix that.`;
+        elOf(fix)?.classList.add("ah-hinted");
+      } else
+        msg += fresh
+          ? ` Something new on the map: ${branchOf(fix).name}.`
+          : ` Look in ${branchOf(fix).name}.`;
+    }
+    tipEl.textContent = msg;
+    tipEl.classList.add("ah-bad");
   }
 
-  // Worked examples: after the bare run, the level's own chips drop in.
-  function nextStage() {
-    const lv = L();
-    state.awaitNext = false;
-    say("");
-    botEl.dataset.face = "idle";
-    state.stage = 1;
-    state.pick = null;
-    state.placed[state.at] = (lv.demo || []).map(d => ({ set: 0, ...d }));
-    state.running = false;
-    root.classList.remove("ah-running");
-    runBtn.querySelector("span").textContent = "Run";
-    draw();
-    root
-      .querySelectorAll(
-        ".ah-slot .ah-chip:not(.ah-lock), .ah-rack .ah-chip:not(.ah-lock)"
-      )
-      .forEach(e => e.classList.add("ah-dropin"));
-  }
-
-  function go(i) {
-    if (!unlocked(i)) return;
+  function go(id) {
     state.runId++;
     state.running = false;
     root.classList.remove("ah-running");
     runBtn.querySelector("span").textContent = "Run";
-    state.at = i;
+    state.at = id;
     state.hints = 3;
-    state.pick = null;
-    state.armed = null;
-    state.awaitNext = false;
-    say("");
-    const lv = LEVELS[i];
-    state.stage = lv.mode === "worked" && !state.stars[i] ? 0 : 1;
-    if (state.stage === 0) state.placed[i] = [];
-    else if (lv.mode === "worked" && !state.placed[i]?.length)
-      state.placed[i] = (lv.demo || []).map(d => ({ set: 0, ...d }));
     blocksEl.innerHTML = "";
     botEl.dataset.face = "idle";
+    say("");
+    clock = 0;
+    save();
     closeOverlay();
     draw();
-    levelsEl
-      .querySelector('[aria-current="true"]')
-      ?.scrollIntoView({ block: "nearest", inline: "center" });
+    ask();
   }
 
   // ---------- overlays ----------
@@ -1039,18 +780,18 @@ export function mountHarness(root) {
     return body;
   }
 
-  function noteCard(i) {
-    const n = NOTES[i];
-    return `<article class="ah-note"><header>${icon(n.chip)}<div><small>${String(i + 1).padStart(2, "0")}</small><h4>${n.title}</h4></div></header><p>${n.idea}</p><p class="ah-wild"><b>In the wild</b> ${n.wild}</p></article>`;
+  function noteCard(id) {
+    const P = PARTS[id];
+    return `<article class="ah-note ah-c-${P.branch}"><header>${icon(id)}<div><small>${branchOf(id).name}</small><h4>${P.name}</h4></div></header><p>${P.does}</p><p class="ah-wild"><b>Costs</b> ${P.cost}</p><p class="ah-wild"><b>In the wild</b> ${P.wild}</p></article>`;
   }
 
-  function showCard(res) {
-    const i = state.at;
+  function showCard(res, gained) {
+    const J = job();
     overlay.innerHTML = "";
     overlay.hidden = false;
     const s = h("div", "ah-sheet ah-clear");
     s.setAttribute("role", "dialog");
-    s.setAttribute("aria-label", "Level cleared");
+    s.setAttribute("aria-label", "Job done");
     const stars = [0, 1, 2]
       .map(
         k =>
@@ -1058,47 +799,54 @@ export function mountHarness(root) {
       )
       .join("");
     const why = [];
-    if (res.tokens > L().par)
-      why.push(`${res.tokens - L().par} tokens over par`);
-    if (res.lostHearts > (L().heartPar || 0))
-      why.push("asked the user more than needed");
-    s.innerHTML = `<p class="ah-kicker">Level ${String(i + 1).padStart(2, "0")} cleared</p><div class="ah-stars ah-big">${stars}</div><p class="ah-why">${why.length ? why.join(" · ") : `${res.tokens} tokens, ${res.turns} turns`}</p>${noteCard(i)}`;
+    if (res.tokens > J.par) why.push(`${res.tokens - J.par} over par`);
+    else if (res.tokens < J.par) why.push(`${J.par - res.tokens} under par`);
+    if (res.lost > (J.asks || 0)) why.push("asked the user more than needed");
+    const idle = wired().filter(id => !res.used.includes(id));
+    const did = res.used
+      .map(
+        id =>
+          `<span class="ah-did ah-c-${PARTS[id].branch}">${icon(id)}${PARTS[id].name}</span>`
+      )
+      .join("");
+    s.innerHTML = `<p class="ah-kicker">${J.name}</p><div class="ah-stars ah-big">${stars}</div><p class="ah-why">${res.tokens} tokens, ${res.turns} turns${why.length ? ` · ${why.join(" · ")}` : ""}</p><div class="ah-dids">${did}</div>${idle.length ? `<p class="ah-sub">Connected but idle: ${idle.map(id => PARTS[id].name).join(", ")}. Idle parts can still take up cells.</p>` : ""}${gained ? `<p class="ah-gain">${icon("star")} +${gained} to spend</p>` : ""}`;
     const row = h("div", "ah-actions");
-    const tweak = h("button", "ah-btn", "<span>Tweak</span>");
-    tweak.type = "button";
-    tweak.addEventListener("click", closeOverlay);
-    const last = i === LEVELS.length - 1;
-    const next = h(
+    const again = h("button", "ah-btn", "<span>Tweak</span>");
+    again.type = "button";
+    again.addEventListener("click", closeOverlay);
+    const next = JOBS.find(j => !state.stars[j.id]);
+    const fwd = h(
       "button",
       "ah-btn ah-run",
-      `<span>${last ? "Field notes" : "Next level"}</span>`
+      `<span>${next ? "Next job" : "Field notes"}</span>`
     );
-    next.type = "button";
-    next.addEventListener("click", () => (last ? showNotes() : go(i + 1)));
-    row.append(tweak, next);
+    fwd.type = "button";
+    fwd.addEventListener("click", () => (next ? go(next.id) : showNotes()));
+    row.append(again, fwd);
     s.append(row);
     overlay.append(s);
-    next.focus();
+    fwd.focus();
   }
 
   function showNotes() {
     const body = sheet("Field notes");
-    const got = state.stars.filter(Boolean).length;
+    const done = state.owned.length === ALL.length;
     body.innerHTML =
-      `<p class="ah-sub">${got} of ${NOTES.length} collected. Clear a level to keep its note.</p><div class="ah-notes">` +
-      NOTES.map((n, i) =>
-        state.stars[i]
-          ? noteCard(i)
-          : `<article class="ah-note ah-locked"><header>${icon("lock")}<div><small>${String(i + 1).padStart(2, "0")}</small><h4>${CHAPTERS[LEVELS[i].chapter]}</h4></div></header></article>`
-      ).join("") +
+      `<p class="ah-sub">${done ? "The whole harness." : `${state.owned.length} of ${ALL.length} parts.`} One card for each part you own.</p><div class="ah-notes">` +
+      BRANCHES.map(b => ORDER[b.id].filter(owns).map(noteCard).join("")).join(
+        ""
+      ) +
       `</div>`;
   }
 
   let rz;
   window.addEventListener("resize", () => {
     clearTimeout(rz);
-    rz = setTimeout(() => !state.running && moveBot("start", true), 120);
+    rz = setTimeout(drawWires, 120);
   });
 
-  go(firstOpen());
+  draw();
+  if (!state.owned.length && !earned())
+    tipEl.textContent = `“${job().ask}” Press Run. This is a model with nothing around it.`;
+  else ask();
 }

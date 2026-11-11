@@ -1,84 +1,61 @@
-// The campaign's emulated agent. Pure logic, no DOM: given a level and where
-// the player put their chips, play the run out and return a list of events
-// for the UI to animate, plus the score.
+// The emulated agent. Pure logic, no DOM: given a job and the set of harness
+// parts that are connected, play the run out and return the events for the UI
+// to animate, plus the score.
 //
-// The model only ever looks at its window. Everything that goes wrong (or
-// right) follows from what is in there when it is called.
+// The model only ever sees its window. A part changes what is in the window,
+// what the model can reach, or what happens around a call. Everything that
+// goes wrong follows from those two things.
 
 export const CELL = 10; // tokens per window cell at full price
-export const FOCUS = 6; // cells past the task before dull steps get skipped
-const HARD_TURNS = 24;
-export const TOOLS = [
-  "read",
-  "search",
-  "edit",
-  "bash",
-  "web",
-  "push",
-  "chat",
-  "db",
-  "cloud",
-];
+export const ROT = 0.75; // window share past which dull steps get dropped
+export const SQUASH = 0.7; // window share at which Compaction fires
+export const BIG = 4; // results larger than this are parked in a file
+const HARD_TURNS = 30;
 
-const DEF_SIZE = { db: 3, cloud: 3 };
-const TRIM_KEEP = [
-  { size: 2, ends: ["head"] },
-  { size: 2, ends: ["tail"] },
-  { size: 4, ends: ["head", "tail"] },
+// Cells a connected part keeps in the window for the whole run.
+const STANDING = { prompt: 1, tools: 1, shell: 1, mcp: 2, files: 1, skills: 1 };
+const CHECKS = [
+  { part: "tests", bug: "logic", size: 1 },
+  { part: "shots", bug: "ui", size: 2 },
+  { part: "logs", bug: "runtime", size: 1 },
 ];
 
 class End {
-  constructor(ok, reason, info) {
+  constructor(ok, reason, info = {}) {
     this.ok = ok;
     this.reason = reason;
-    this.info = info || {};
+    this.info = info;
   }
 }
 
-export function simulate(level, placed) {
-  const N = level.window;
-  const tiles = level.tiles;
+export function simulate(job, parts) {
+  const on = new Set(parts);
+  const has = p => on.has(p);
+  const N = job.window;
+  const steps = job.steps;
+  const lore = job.lore || {};
   const ev = [];
+  const used = new Set();
 
-  // --- where the chips are ---
-  const bot = new Map();
-  const onTile = tiles.map(() => new Map());
-  const onFlag = new Map();
-  const onStart = new Map();
-  const onTrap = new Map();
-  let compactAt = 0;
-  for (const p of placed) {
-    const set = p.set || 0;
-    if (p.at === "bot") bot.set(p.chip, set);
-    else if (p.at === "flag") onFlag.set(p.chip, set);
-    else if (p.at === "start") onStart.set(p.chip, set);
-    else if (p.at === "trap") onTrap.set(p.chip, set);
-    else if (p.at[0] === "c") compactAt = +p.at.slice(1);
-    else if (onTile[+p.at.slice(1)]) onTile[+p.at.slice(1)].set(p.chip, set);
-  }
-
-  // --- run state ---
   let win = [];
   let uid = 0;
   let pos = 0;
   let turns = 0;
   let tokens = 0;
-  let hearts = level.hearts ?? 2;
+  let hearts = job.hearts ?? 1;
   let prevIds = [];
-  let lazy = null;
-  let broken = null;
-  let pendingFix = null;
-  let cp = null;
-  const tries = tiles.map(() => 0);
-  const runs = tiles.map(() => 0);
-  const fixed = tiles.map(() => false);
-  const altUsed = tiles.map(() => false);
-  const flubbed = tiles.map(() => false);
-  const skipped = [];
+  let bug = null; // { kind, step, corrupt }
+  let checkpoint = null;
+  let loadedSkill = null;
+  let quitRestarts = 0;
+  let poisoned = false;
+  const checked = new Set();
+  const done = []; // facts recorded in the progress file
   const refetch = {};
+  const skipped = [];
+  const ran = steps.map(() => 0);
 
-  const snap = () =>
-    win.map(b => ({ ...b, gems: b.gems.map(g => ({ ...g })) }));
+  const snap = () => win.map(b => ({ ...b, facts: [...b.facts] }));
   const fill = () => win.reduce((n, b) => n + b.size, 0);
   const emit = (t, d = {}) =>
     ev.push({ t, ...d, win: snap(), tokens, hearts, turns, fill: fill() });
@@ -86,429 +63,413 @@ export function simulate(level, placed) {
     id: ++uid,
     kind,
     size,
-    gems: [],
+    facts: [],
     ...extra,
   });
-  const has = g => win.some(b => b.gems.some(x => x.g === g));
-  const eff = i => (altUsed[i] ? { ...tiles[i], ...tiles[i].alt } : tiles[i]);
-  const hasTodo = () => bot.has("todo");
+  const sees = f => win.some(b => b.facts.includes(f));
   const fail = (reason, info) => {
     throw new End(false, reason, info);
   };
+  const use = p => {
+    used.add(p);
+    return p;
+  };
+
+  // What sits in the window at the start of every session.
+  function standing() {
+    const out = [];
+    if (has("prompt")) {
+      const facts = Object.keys(lore).filter(
+        f => lore[f].from.includes("prompt") && !provider(f, true)
+      );
+      const size =
+        STANDING.prompt + facts.reduce((n, f) => n + (lore[f].stuffed ?? 2), 0);
+      out.push(block("prompt", size, { part: "prompt", facts }));
+    }
+    for (const p of ["tools", "shell", "mcp", "files"])
+      if (has(p)) out.push(block("def", STANDING[p], { part: p }));
+    if (has("memory")) {
+      const facts = Object.keys(lore).filter(f =>
+        lore[f].from.includes("memory")
+      );
+      out.push(block("memory", 1, { part: "memory", facts }));
+    }
+    if (has("skills")) out.push(block("skills", 1, { part: "skills" }));
+    if (has("progress") && has("files"))
+      out.push(block("progress", 1, { part: "progress", facts: [...done] }));
+    return out;
+  }
+  // The cheaper source of a piece of know-how, if one is connected.
+  function provider(f, besidesPrompt) {
+    const from = lore[f]?.from || [];
+    for (const p of ["memory", "skills"])
+      if (from.includes(p) && has(p)) return p;
+    if (!besidesPrompt && from.includes("prompt") && has("prompt"))
+      return "prompt";
+    return null;
+  }
 
   function push(b, why) {
-    const todo = win.findIndex(x => x.kind === "todo");
-    if (todo >= 0) win.splice(todo, 0, b);
-    else win.push(b);
+    win.push(b);
     emit("drop", { id: b.id, why });
   }
 
-  function charge(mult = 1, what = "turn") {
+  function charge(what = "turn", mult = 1) {
     turns++;
     const ids = win.map(b => b.id);
     let cached = 0;
-    if (bot.has("cache")) {
+    if (has("cache")) {
       for (let i = 0; i < win.length && ids[i] === prevIds[i]; i++)
         cached += win[i].size;
+      if (cached) use("cache");
     }
     const cost = Math.round(((fill() - cached) * CELL + cached) * mult);
     tokens += cost;
     prevIds = ids;
     emit("call", { cost, cached, what, small: mult < 1 });
+    if (job.deadline && turns > job.deadline) fail("late");
     if (turns > HARD_TURNS) fail("runaway");
   }
 
-  function heart() {
+  function heart(why) {
     hearts--;
-    emit("ask");
+    use("perms");
+    emit("ask", { why });
     if (hearts < 0) fail("annoyed");
   }
 
-  function overflowCheck() {
+  function settle() {
     if (fill() > N) fail("overflow", { fill: fill() });
-  }
-
-  function compact() {
-    const keep = b =>
-      b.pinned || b.kind === "def" || b.kind === "notes" || b.kind === "todo";
-    const squash = win.filter(b => !keep(b));
-    if (squash.reduce((n, b) => n + b.size, 0) <= 1) return;
-    charge(1, "compact");
-    const gems = [];
-    const lost = [];
-    for (const b of squash)
-      for (const g of b.gems) (g.exact ? lost : gems).push({ ...g });
-    const sum = block("summary", 1, { gems });
-    const todo = win.filter(b => b.kind === "todo");
-    win = [...win.filter(b => keep(b) && b.kind !== "todo"), sum, ...todo];
-    emit("compact", {
-      id: sum.id,
-      lost: lost.map(g => g.g),
-      lostTask: squash.some(b => b.kind === "task"),
-    });
-  }
-
-  function afterDrops() {
-    overflowCheck();
-    if (compactAt && fill() >= compactAt) compact();
-  }
-
-  function runCheck(where) {
-    const red = broken != null;
-    push(block("test", 2, { red }), "check");
-    emit("check", { red, where });
-    overflowCheck();
-    if (!red) return;
-    emit("reveal", { tile: broken, what: "bad" });
-    if (tiles[broken].corrupt) {
-      if (cp && cp.at <= broken) {
-        win = cp.win.map(b => ({ ...b, gems: b.gems.map(g => ({ ...g })) }));
-        win.push(block("err", 1, { label: "lesson" }));
-        pos = cp.pos;
-        fixed[broken] = true;
-        broken = null;
-        emit("rewind", { to: cp.pos });
-      } else fail("corrupt", { late: !!cp, tile: broken });
-    } else pendingFix = broken;
-  }
-
-  // One tile's tool call. Returns true when the bot may carry on to the next
-  // tile in the same turn (only matters for fan-out groups).
-  function perform(j, group) {
-    const T = eff(j);
-    const chips = onTile[j];
-    if (group) {
-      if (!bot.has(T.tool) || (bot.get(T.tool) === 1 && lazy !== T.tool))
-        return false;
-      const inGroup = g => group.some(k => eff(k).gem === g);
-      if (T.needs?.some(inGroup)) {
-        push(block("err", 1, { label: "dep" }), "dep");
-        emit("say", { text: "needed that first", tile: j });
-        return false;
-      }
-      if (T.needs?.some(g => !has(g))) return false;
-      if (T.tool === "sleep" || T.dull) return false;
-    }
-
-    // permissions
-    const sandbox = bot.has("sandbox");
-    if (T.danger) {
-      emit("reveal", { tile: j, what: "danger" });
-      if (chips.has("wall") || chips.has("gate")) {
-        if (!chips.has("wall")) heart();
-        push(block("err", 1, { label: "denied" }), "denied");
-        emit("say", { text: "denied", tile: j });
-        if (j === pos) pos++;
-        return true;
-      }
-      if (!sandbox) fail("damage", { tile: j });
-      emit("say", { text: "contained", tile: j });
-    } else if (T.amber) {
-      if (chips.has("wall")) fail("blocked", { tile: j });
-      if (!chips.has("gate"))
-        fail(sandbox ? "boxed" : "unapproved", { tile: j });
-      heart();
-    } else {
-      if (chips.has("wall")) fail("blocked", { tile: j });
-      if (chips.has("gate")) heart();
-    }
-
-    // errors
-    tries[j]++;
-    if (tries[j] <= (T.err || 0)) {
-      emit("reveal", { tile: j, what: "err" });
-      if (!bot.has("catch")) fail("crash", { tile: j });
-      // repeated failures of the same call stack up in one block
-      const last = win.findLast(b => b.kind !== "todo");
-      if (last?.label === "error" && last.tile === j) {
-        last.count++;
-        emit("drop", { id: last.id, why: "error" });
-      } else
-        push(block("err", 1, { label: "error", tile: j, count: 1 }), "error");
-      emit("say", { text: "error", tile: j });
-      const cap = chips.has("stop") ? chips.get("stop") + 1 : 0;
-      if (cap && tries[j] >= cap) {
-        if (tiles[j].alt && !altUsed[j]) {
-          altUsed[j] = true;
-          tries[j] = 0;
-          emit("alt", { tile: j });
-        } else fail("gaveup", { tile: j });
-      }
-      return false;
-    }
-
-    // success: the result lands in the window
-    runs[j]++;
-    let size = T.size;
-    const gems = [];
-    const at = T.at || "head";
-    let cut = false;
-    if (chips.has("trim")) {
-      const k = TRIM_KEEP[chips.get("trim")];
-      if (size > k.size) {
-        size = k.size;
-        cut = !k.ends.includes(at);
+    if (has("compact") && fill() / N >= SQUASH) {
+      const loose = win.filter(b =>
+        ["result", "edit", "summary", "check", "err"].includes(b.kind)
+      );
+      if (loose.reduce((n, b) => n + b.size, 0) > 1) {
+        emit("signal", { from: "compact", to: "model" });
+        charge("compact");
+        use("compact");
+        const facts = [...new Set(loose.flatMap(b => b.facts))];
+        const sum = block("summary", 1, { facts, part: "compact" });
+        win = [...win.filter(b => !loose.includes(b)), sum];
+        emit("compact", { id: sum.id });
       }
     }
-    if (T.gem && !cut) gems.push({ g: T.gem, exact: !!T.exact, at });
+  }
+
+  function note(fact) {
+    if (!fact || !has("progress") || !has("files")) return;
+    if (done.includes(fact)) return;
+    done.push(fact);
+    use("progress");
+    const b = win.find(x => x.kind === "progress");
+    if (b && !b.facts.includes(fact)) b.facts.push(fact);
+    emit("signal", { from: "model", to: "progress" });
+  }
+
+  function newSession(why) {
+    win = standing();
+    win.push(block("task", 1));
+    prevIds = [];
+    loadedSkill = null;
+    emit("fresh", { why });
+    if (win.some(b => b.kind === "progress" && b.facts.length))
+      emit("signal", { from: "progress", to: "model" });
+  }
+
+  // A risky call. Returns "skip" when the call is refused.
+  function guard(S) {
+    if (!S.risky) return "go";
+    if (S.risky === "danger") {
+      if (has("sandbox")) {
+        use("sandbox");
+        emit("say", { text: "contained", part: "sandbox" });
+        return "go";
+      }
+      if (has("perms")) {
+        heart("danger");
+        emit("say", { text: "denied", part: "perms" });
+        return "skip";
+      }
+      fail("damage", { step: pos });
+    }
+    // needs the outside world, and a person's say-so
+    if (!has("perms")) fail(has("sandbox") ? "boxed" : "unapproved");
+    heart("outside");
+    return "go";
+  }
+
+  function result(S, i) {
+    let size = S.size ?? 1;
+    const facts = S.fact ? [S.fact] : [];
+    let parked = false;
+    if (has("files") && size > BIG) {
+      // keep the head and the tail, park the rest in a file
+      use("files");
+      parked = true;
+      size = 2;
+      if (S.at === "mid") facts.length = 0;
+      emit("signal", { from: "model", to: "files" });
+    }
     const b = block("result", size, {
-      gems,
-      tile: j,
-      tool: T.tool,
-      cut,
-      trimmed: size < T.size,
+      facts,
+      step: i,
+      part: S.tool,
+      parked,
     });
-    if (chips.has("pin")) b.pinned = true;
-    if (T.spiky) {
-      b.spiky = true;
-      emit("reveal", { tile: j, what: "spiky" });
+    if (S.hostile) {
+      b.hostile = true;
+      if (has("shield")) {
+        use("shield");
+        b.shielded = true;
+      } else poisoned = true;
     }
-    if (chips.has("shield")) {
-      b.shielded = true;
-      b.size += 1;
-    }
-    push(b, "result");
-    if (T.gem) emit("reveal", { tile: j, what: "at" });
-
-    if ((T.bad || T.corrupt) && !fixed[j]) {
-      if (runs[j] === 1) broken = j;
-      else if (T.bad) {
-        fixed[j] = true;
-        if (broken === j) broken = null;
-      }
-    }
-    if (chips.has("note") && T.gem && !cut) {
-      let notes = win.find(x => x.kind === "notes");
-      if (!notes) {
-        notes = block("notes", 0);
-        const after = win.findLastIndex(x => x.kind === "def");
-        win.splice(after + 1, 0, notes);
-      }
-      if (!notes.gems.some(g => g.g === T.gem)) {
-        notes.size += 1;
-        notes.gems.push({ g: T.gem, exact: !!T.exact, at: "head" });
-        emit("note", { id: notes.id });
-      }
-    }
-    if (j === pos) pos++;
-    if (chips.has("check")) runCheck(j);
-    return true;
+    return b;
   }
 
-  function scout(i) {
-    let span = 0;
-    const want = onTile[i].get("scout") + 1;
-    const got = [];
-    for (let j = i; j < tiles.length && span < want; j++) {
-      const T = tiles[j];
-      const plain =
-        !T.danger && !T.amber && !T.err && !T.bad && !T.corrupt && !T.dull;
-      const fed = (T.needs || []).every(g => has(g) || got.includes(g));
-      if (!plain || !fed || T.tool === "sleep" || !bot.has(T.tool)) break;
-      if (T.gem) got.push(T.gem);
-      span++;
+  // Exploring, fanned out: one helper per topic, each in its own small
+  // window, all at once. One cell comes back from each, and the whole fan-out
+  // takes the main agent a single turn.
+  function delegate() {
+    const tool = steps[pos].tool || "tools";
+    if (!has(tool)) {
+      charge();
+      fail("notool", { part: tool });
     }
-    if (!span) return false;
-    charge(1, "delegate");
-    emit("hop", { to: i });
-    let sub = 2; // the scout's own window: one tool, the task
-    let subTok = 0;
-    const gems = [];
-    for (let j = i; j < i + span; j++) {
-      const T = tiles[j];
-      subTok += sub * CELL;
-      let size = T.size;
-      let cut = false;
-      if (onTile[j].has("trim")) {
-        const k = TRIM_KEEP[onTile[j].get("trim")];
-        if (size > k.size) {
-          size = k.size;
-          cut = !k.ends.includes(T.at || "head");
+    use(tool);
+    emit("signal", { from: "model", to: "subs" });
+    charge("delegate");
+    use("subs");
+    while (pos < steps.length && steps[pos].explore) {
+      const topic = steps[pos].explore;
+      let sub = 2;
+      const facts = [];
+      for (; steps[pos]?.explore === topic; pos++) {
+        tokens += sub * CELL;
+        sub += steps[pos].size ?? 1;
+        ran[pos]++;
+        emit("sub", { step: pos, sub });
+        if (sub > N) fail("subflood");
+        if (steps[pos].fact) facts.push(steps[pos].fact);
+      }
+      tokens += sub * CELL;
+      emit("signal", { from: "subs", to: "model" });
+      push(block("summary", 1, { facts, part: "subs" }), "subs");
+      for (const f of facts) note(f);
+    }
+    settle();
+  }
+
+  function act(i, again) {
+    const S = steps[i];
+    const tool = S.tool || "tools";
+    if (!has(tool)) {
+      charge();
+      fail("notool", { part: tool });
+    }
+    use(tool);
+    const g = guard(S);
+    const easy = S.easy && has("router");
+    if (easy) use("router");
+    emit("signal", { from: "model", to: tool });
+    charge("turn", easy ? 0.2 : 1);
+    if (g === "skip") {
+      push(block("err", 1, { part: "perms" }), "denied");
+    } else {
+      ran[i]++;
+      emit("signal", { from: tool, to: "model" });
+      if (again && win.some(b => b.step === i && b.parked)) {
+        // a second look at a parked result is a targeted read
+        push(block("result", 1, { facts: [S.fact], step: i, part: tool }));
+      } else push(result(S, i), "result");
+      if (S.edit) {
+        if (has("git") && !checkpoint && !again)
+          checkpoint = { win: snap(), pos: i, done: [...done] };
+        if (S.bad && ran[i] === 1)
+          bug = { kind: S.bad, step: i, corrupt: !!S.corrupt };
+        else if (bug?.step === i && !bug.corrupt) bug = null;
+      }
+      note(S.fact);
+    }
+    if (!again && i === pos) pos++;
+    settle();
+  }
+
+  // Returns true if it spent the turn fetching something it had lost.
+  function need(list) {
+    for (const f of list || []) {
+      if (sees(f)) continue;
+      if (lore[f]) {
+        const p = provider(f);
+        if (p === "skills" && loadedSkill !== f) {
+          emit("signal", { from: "skills", to: "model" });
+          charge("load");
+          use("skills");
+          win = win.filter(b => b.kind !== "skill");
+          win.push(block("skill", 2, { facts: [f], part: "skills" }));
+          loadedSkill = f;
+          emit("drop", { why: "skill" });
+          settle();
+          return true;
+        }
+        if (!p) {
+          charge();
+          fail("unknown", { fact: f, from: lore[f].from });
+        }
+        continue;
+      }
+      const src = steps.findIndex(s => s.fact === f);
+      if (src < 0 || steps[src].once || src >= pos) {
+        charge();
+        fail("amnesia", { fact: f });
+      }
+      refetch[f] = (refetch[f] || 0) + 1;
+      if (refetch[f] > 2) {
+        charge();
+        fail("loop", { fact: f });
+      }
+      emit("miss", { fact: f });
+      act(src, true);
+      return true;
+    }
+    return false;
+  }
+
+  function finish() {
+    if (need(job.goal)) return;
+    // run whatever checks are connected, then fix what they find
+    for (const c of CHECKS) {
+      if (!has(c.part) || checked.has(c.part)) continue;
+      checked.add(c.part);
+      emit("signal", { from: "model", to: c.part });
+      charge("check");
+      emit("signal", { from: c.part, to: "model" });
+      const red = bug?.kind === c.bug;
+      push(block("check", c.size, { part: c.part, red }), "check");
+      emit("say", { text: red ? "that's wrong" : "looks right", part: c.part });
+      if (red) {
+        use(c.part);
+        if (bug.corrupt) {
+          if (!checkpoint) fail("stuck", { step: bug.step });
+          use("git");
+          emit("signal", { from: "git", to: "model" });
+          win = checkpoint.win.map(b => ({ ...b, facts: [...b.facts] }));
+          win.push(block("err", 1, { part: "git" }));
+          pos = checkpoint.pos;
+          bug = null;
+          checked.delete(c.part);
+          emit("rewind");
+        } else {
+          act(bug.step, true);
+          checked.delete(c.part);
         }
       }
-      sub += size;
-      runs[j]++;
-      emit("scout", { tile: j, sub });
-      if (sub > N) fail("scoutflood", { tile: j });
-      if (T.gem && !cut && !T.exact)
-        gems.push({ g: T.gem, exact: false, at: "head" });
-      if (T.gem) emit("reveal", { tile: j, what: "at" });
-    }
-    subTok += sub * CELL;
-    tokens += subTok;
-    pos = i + span;
-    emit("hop", { to: i + span - 1 });
-    push(block("summary", 1, { gems, scout: true }), "scout");
-    afterDrops();
-    return true;
-  }
-
-  function exec(i, back) {
-    const T = eff(i);
-    if (!bot.has("loop")) {
-      charge();
-      emit("reach", { to: i });
-      fail("noloop");
-    }
-    if (!bot.has(T.tool)) {
-      charge();
-      emit("reach", { to: i });
-      fail("notool", { tool: T.tool, tile: i });
-    }
-    if (bot.get(T.tool) === 1 && lazy !== T.tool) {
-      charge(1, "load");
-      win = win.filter(b => !(b.kind === "def" && b.lazy));
-      const d = block("def", DEF_SIZE[T.tool] || 1, {
-        tool: T.tool,
-        lazy: true,
-      });
-      const after = win.findLastIndex(x => x.kind === "def");
-      win.splice(after + 1, 0, d);
-      lazy = T.tool;
-      emit("load", { id: d.id, tool: T.tool });
-      overflowCheck();
+      settle();
       return;
     }
-    if (onTile[i].has("rewind") && !cp && !back)
-      cp = { at: i, pos: i, win: snap() };
-    if (onTile[i].has("scout") && !back && scout(i)) return;
-
-    const routed = onTile[i].has("router") && !flubbed[i];
-    charge(routed ? 0.2 : 1);
-    emit("hop", { to: i, back });
-    if (routed && (T.needs || []).length >= 2) {
-      flubbed[i] = true;
-      push(block("err", 1, { label: "flub" }), "flub");
-      emit("say", { text: "too much for the small model", tile: i });
-      overflowCheck();
-      return;
-    }
-    const group = [];
-    const span = onTile[i].has("fan") && !back ? onTile[i].get("fan") + 2 : 1;
-    for (let j = i; j < Math.min(tiles.length, i + span); j++) {
-      if (j > i) emit("hop", { to: j, fan: true });
-      const ok = perform(j, j > i ? group : null);
-      if (!ok) break;
-      group.push(j);
-    }
-    afterDrops();
-  }
-
-  function need(list, at) {
-    const miss = (list || []).find(g => !has(g));
-    if (!miss) return false;
-    const src = tiles.findIndex((t, k) => eff(k).gem === miss);
-    if (src < 0 || tiles[src].once) {
-      charge();
-      fail("amnesia", { gem: miss, tile: src });
-    }
-    refetch[miss] = (refetch[miss] || 0) + 1;
-    if (refetch[miss] > 2) {
-      charge();
-      const chips = onTile[src];
-      const t = tiles[src];
-      const cut =
-        chips.has("trim") &&
-        t.size > TRIM_KEEP[chips.get("trim")].size &&
-        !TRIM_KEEP[chips.get("trim")].ends.includes(t.at || "head");
-      fail("loop", { gem: miss, tile: src, cut, at });
-    }
-    emit("miss", { gem: miss, tile: src });
-    exec(src, true);
-    return true;
+    charge("done");
+    if (bug) fail("broken", { kind: bug.kind });
+    if (skipped.length) fail("skipped", { steps: skipped });
+    throw new End(true, "done");
   }
 
   function step() {
-    // an order hiding in a tool result
-    const sp = win.find(b => b.spiky && !b.shielded && !b.spent);
-    if (sp) {
+    // an order hiding in something it read
+    if (poisoned) {
+      poisoned = false;
       charge();
-      emit("hop", { to: "trap" });
-      sp.spent = true;
-      if (onTrap.has("wall") || onTrap.has("gate")) {
-        if (!onTrap.has("wall")) heart();
-        push(block("err", 1, { label: "denied" }), "denied");
-        emit("say", { text: "denied", tile: "trap" });
+      if (has("sandbox")) {
+        use("sandbox");
+        emit("say", { text: "contained", part: "sandbox" });
         return;
       }
-      if (bot.has("sandbox")) {
-        emit("say", { text: "contained", tile: "trap" });
+      if (has("perms")) {
+        heart("hostile");
+        emit("say", { text: "denied", part: "perms" });
         return;
       }
-      fail("injected", { tile: sp.tile });
+      fail("injected");
     }
-    if (!win.some(b => b.kind === "task" || b.kind === "todo")) {
-      charge();
-      fail("forgot");
-    }
-    if (pendingFix != null) {
-      const j = pendingFix;
-      pendingFix = null;
-      return exec(j, true);
-    }
-    if (pos >= tiles.length) {
-      if (need(level.goal, "flag")) return;
-      charge(1, "done");
-      if (onFlag.has("check")) {
-        runCheck("flag");
-        if (pos < tiles.length || pendingFix != null) return;
+    if (pos >= steps.length) return finish();
+    const S = steps[pos];
+
+    if (S.t === "user") {
+      if (!has("convo")) {
+        // every message arrives on its own
+        win = [...standing(), block("task", 1)];
+        prevIds = [];
+        emit("fresh", { why: "stateless" });
+        if ((S.needs || []).some(f => !sees(f))) {
+          charge();
+          fail("lostthread");
+        }
+      } else {
+        use("convo");
+        emit("signal", { from: "convo", to: "model" });
+        push(block("task", 1), "user");
       }
-      if (broken != null) fail("broken", { tile: broken });
-      if (skipped.length) fail("skipped", { tiles: skipped });
-      emit("hop", { to: "flag" });
-      throw new End(true, "done");
-    }
-    const T = eff(pos);
-    if (T.tool === "sleep") {
-      win = win.filter(
-        b => (b.kind === "def" && !b.lazy) || b.kind === "notes"
-      );
-      lazy = null;
-      prevIds = [];
-      emit("hop", { to: pos });
-      emit("sleep");
-      push(block("task", 1, { gems: [] }), "task");
-      if (hasTodo()) win.push(block("todo", 1));
       pos++;
       return;
     }
-    if (T.dull && !hasTodo()) {
-      const t = win.findIndex(b => b.kind === "task");
-      const after = win.slice(t + 1).reduce((n, b) => n + b.size, 0);
-      if (after >= FOCUS) {
-        skipped.push(pos);
-        emit("skip", { tile: pos });
-        pos++;
-        return;
-      }
+    if (S.t === "sleep") {
+      newSession("sleep");
+      pos++;
+      return;
     }
-    if (need(T.needs, pos)) return;
-    exec(pos, false);
+    if (S.t === "quit") {
+      if (!has("loop")) {
+        charge("done");
+        fail("quit");
+      }
+      use("loop");
+      emit("signal", { from: "loop", to: "model" });
+      newSession("loop");
+      pos++;
+      if (!(has("progress") && has("files"))) {
+        pos = 0;
+        if (++quitRestarts > 1) fail("lostplace");
+      }
+      return;
+    }
+    if (S.dull && fill() / N >= ROT && !(has("progress") && has("files"))) {
+      skipped.push(pos);
+      emit("skip", { step: pos });
+      pos++;
+      return;
+    }
+    if (need(S.needs)) return;
+    if (S.t === "write") {
+      if (!has("files")) {
+        charge();
+        fail("nofile");
+      }
+      use("files");
+      charge();
+      emit("signal", { from: "model", to: "files" });
+      push(block("edit", 1, { part: "files" }), "write");
+      pos++;
+      return settle();
+    }
+    if (S.explore && has("subs")) return delegate();
+    act(pos, false);
   }
-
-  // --- go ---
   let end;
   try {
-    for (const [chip, set] of bot) {
-      if (TOOLS.includes(chip) && set === 0)
-        win.push(block("def", DEF_SIZE[chip] || 1, { tool: chip }));
-    }
-    win.push(block("task", 1, { pinned: onStart.has("pin") }));
-    if (hasTodo()) win.push(block("todo", 1));
+    win = standing();
+    win.push(block("task", 1));
     emit("start");
-    overflowCheck();
-    for (let guard = 0; guard < 200; guard++) step();
+    for (const b of win)
+      if (["prompt", "memory"].includes(b.kind) && b.facts.length) use(b.part);
+    if (fill() > N) fail("overflow", { fill: fill() });
+    for (let guard = 0; guard < 300; guard++) step();
     fail("runaway");
   } catch (e) {
     if (!(e instanceof End)) throw e;
     end = e;
   }
 
-  const lostHearts = (level.hearts ?? 2) - Math.max(hearts, 0);
+  const lost = (job.hearts ?? 1) - Math.max(hearts, 0);
   const stars = end.ok
-    ? 1 +
-      (tokens <= level.par ? 1 : 0) +
-      (lostHearts <= (level.heartPar || 0) ? 1 : 0)
+    ? 1 + (tokens <= job.par ? 1 : 0) + (lost <= (job.asks || 0) ? 1 : 0)
     : 0;
   emit("end", { ok: end.ok, reason: end.reason, info: end.info, stars });
   return {
@@ -519,7 +480,8 @@ export function simulate(level, placed) {
     tokens,
     turns,
     hearts,
-    lostHearts,
+    lost,
     stars,
+    used: [...used],
   };
 }
