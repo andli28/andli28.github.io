@@ -220,7 +220,8 @@ const PROTOCOL = `You are an agent that completes the user's task.
 To use a tool, reply with ONLY one JSON object on a single line, like:
 {"tool": "read_file", "args": {"path": "notes.txt"}}
 After each tool call you will receive a message starting with TOOL RESULT.
-When you know the final answer, reply with: ANSWER: <your answer>`;
+When you know the final answer, give it with the answer tool, like:
+{"tool": "answer", "args": {"text": "The file has 3 lines."}}`;
 
 function systemPrompt(h) {
   if (!h.loop) return "Answer the user's question in one short line.";
@@ -246,6 +247,12 @@ export function parseReply(text) {
       else if (text[i] === "}" && --depth === 0) {
         try {
           const obj = JSON.parse(text.slice(start, i + 1));
+          // Small models like to answer with a call. Take it.
+          if (obj?.tool === "answer") {
+            const { tool: _, ...rest } = obj;
+            const v = rest.args?.text ?? rest.args ?? rest;
+            return { answer: typeof v === "string" ? v : JSON.stringify(v) };
+          }
           if (obj && typeof obj.tool === "string")
             return { call: { tool: obj.tool, args: obj.args || {} } };
         } catch {
@@ -380,7 +387,7 @@ export async function runJob(job, h, model, onStep = () => {}) {
     const sig = JSON.stringify([tool, args]);
     if (h.stop && sig === lastCall) {
       const fb =
-        "You already made that exact call and have its result above. Do not call it again. Reply with: ANSWER: <your answer>";
+        "You already made that exact call and have its result above. Do not call it again. Give your final answer with the answer tool.";
       msgs.push({ role: "user", content: fb });
       note("harness", fb);
       continue;
@@ -415,7 +422,7 @@ export async function runJob(job, h, model, onStep = () => {}) {
     const fb = `TOOL RESULT${err ? " (error)" : ""}: ${out}`;
     msgs.push({
       role: "user",
-      content: `${fb}\n(If that is enough, reply with ANSWER: <your answer>. Otherwise call another tool.)`,
+      content: `${fb}\n(If that is enough, give the final answer with the answer tool. Otherwise call another tool.)`,
     });
     note(
       "harness",
