@@ -8,9 +8,13 @@
 //                         deciding it has done enough
 //   write                 the result has to land in a file
 //
+// `budget` is a token bill above which the job counts as failed.
+//
 // `lore` is know-how the model doesn't have: which parts can supply it, and
 // how many cells it takes when stuffed into the prompt. `tier` sets how much
-// the failure line gives away: 0 guided, 1 names the part, 2 names the branch.
+// the failure line gives away: 0 and 1 point at the part to change, 2 leaves
+// that to the Hint button. `gives` (filled in at the bottom) is the parts a
+// job introduces: the ones in its `sol` that no earlier job used.
 
 const c = (tool, size, o = {}) => ({ t: "call", tool, size, ...o });
 const e = (o = {}) => ({ t: "call", tool: "tools", size: 1, edit: true, ...o });
@@ -324,6 +328,7 @@ export const JOBS = [
     tier: 2,
     window: 20,
     showcase: true,
+    budget: 300,
     steps: [
       c("tools", 4, { fact: "a" }),
       user({ needs: ["a"] }),
@@ -345,6 +350,8 @@ export const JOBS = [
     tier: 2,
     window: 16,
     showcase: true,
+    budget: 100,
+    fix: { pricey: "router" },
     steps: [
       c("tools", 2, { fact: "a" }),
       e({ needs: ["a"], easy: true }),
@@ -386,3 +393,9 @@ export const JOBS = [
     ],
   },
 ];
+
+const met = new Set();
+for (const j of JOBS) {
+  j.gives = j.sol.filter(id => !met.has(id));
+  j.sol.forEach(id => met.add(id));
+}

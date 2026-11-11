@@ -467,6 +467,13 @@ export function simulate(job, parts) {
     end = e;
   }
 
+  // Some jobs have a bill the user won't pay.
+  if (end.ok && job.budget && tokens > job.budget) {
+    end.ok = false;
+    end.reason = "pricey";
+    end.info = { tokens };
+  }
+
   const lost = (job.hearts ?? 1) - Math.max(hearts, 0);
   const stars = end.ok
     ? 1 + (tokens <= job.par ? 1 : 0) + (lost <= (job.asks || 0) ? 1 : 0)

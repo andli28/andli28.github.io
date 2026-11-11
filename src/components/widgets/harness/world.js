@@ -1,5 +1,5 @@
 // The map: six branches around the model, and the parts in each. A part has a
-// price in stars, a one-line description of what it does and what it costs in
+// short label, a description of what it does and what it costs in
 // use, and a Field Notes card.
 
 export const BRANCHES = [
@@ -11,10 +11,9 @@ export const BRANCHES = [
   { id: "control", name: "Control", ask: "Who keeps it on course?" },
 ];
 
-const p = (branch, name, price, does, cost, wild, needs) => ({
+const p = (branch, name, does, cost, wild, needs) => ({
   branch,
   name,
-  price,
   does,
   cost,
   wild,
@@ -26,7 +25,6 @@ export const PARTS = {
   tools: p(
     "action",
     "Tools",
-    0,
     "Lets the model read and edit. It asks; the harness runs the call and hands the result back, in a loop.",
     "1 cell for the tool descriptions, every turn.",
     "The tool loop at the heart of every agent: call the model, run its tool calls, repeat until it answers in plain text."
@@ -34,7 +32,6 @@ export const PARTS = {
   shell: p(
     "action",
     "Shell",
-    1,
     "One general tool: run any command. Tests, builds, installs, scripts it writes itself.",
     "1 cell, every turn.",
     "A bash tool and code execution. Most coding agents lean on this more than on any special-purpose tool."
@@ -42,7 +39,6 @@ export const PARTS = {
   mcp: p(
     "action",
     "Connectors",
-    2,
     "Reaches services outside the machine: the ticket tracker, the calendar, the database.",
     "2 cells, every turn. Connector descriptions are bulky.",
     "MCP servers and plugins."
@@ -51,7 +47,6 @@ export const PARTS = {
   convo: p(
     "context",
     "History",
-    1,
     "Keeps earlier turns in the window, so a follow-up question means something.",
     "Nothing up front. The window grows with every exchange.",
     "A model call is stateless. The harness re-sends the whole conversation each time."
@@ -59,7 +54,6 @@ export const PARTS = {
   prompt: p(
     "context",
     "Prompt",
-    1,
     "Standing instructions: who the agent is, how to behave. Anything else can be stuffed in here too, at a price.",
     "1 cell every turn, plus 2 or more for each thing stuffed in.",
     "The system prompt."
@@ -67,7 +61,6 @@ export const PARTS = {
   memory: p(
     "context",
     "Memory file",
-    2,
     "Project knowledge loaded at the start of every session: conventions, commands, where things live.",
     "1 cell, every turn.",
     "Files like AGENTS.md or CLAUDE.md, read into context when the agent starts."
@@ -75,7 +68,6 @@ export const PARTS = {
   skills: p(
     "context",
     "Skills",
-    2,
     "A shelf of how-to guides. Only the index sits in the window; a guide is opened when a step needs it.",
     "1 cell for the index, then one extra turn and 2 cells per guide opened.",
     "Skills and tool search: progressive disclosure instead of loading everything up front."
@@ -83,7 +75,6 @@ export const PARTS = {
   cache: p(
     "context",
     "Cache",
-    2,
     "The start of the window is the same every turn, so it is re-read at a tenth of the price.",
     "Nothing. But anything that rewrites the window, like compaction, pays full price again.",
     "Prompt caching, and the reason harnesses append to history instead of editing it."
@@ -92,7 +83,6 @@ export const PARTS = {
   perms: p(
     "guard",
     "Permissions",
-    1,
     "Pauses before a risky action and asks the user.",
     "One interruption each time it asks. People stop answering.",
     "Permission prompts and allow / ask / deny rules."
@@ -100,7 +90,6 @@ export const PARTS = {
   sandbox: p(
     "guard",
     "Sandbox",
-    2,
     "Runs commands in a box. Mistakes inside it are free; nothing gets out.",
     "Nothing. Steps that must leave the box still need a person's say-so.",
     "Sandboxed execution: a container or VM the agent can't break out of."
@@ -108,7 +97,6 @@ export const PARTS = {
   shield: p(
     "guard",
     "Shield",
-    2,
     "Wraps text from the outside world and labels it as data, so it stops reading like an instruction.",
     "Nothing.",
     "Prompt-injection defences: tool output marked as untrusted."
@@ -117,7 +105,6 @@ export const PARTS = {
   files: p(
     "persist",
     "Files",
-    1,
     "A place to write. Also a place to park: long results keep their head and tail in the window and the rest goes to disk.",
     "1 cell, every turn. A fact from the middle of a parked result costs one more look.",
     "The filesystem as working memory, and tool-output offloading."
@@ -125,7 +112,6 @@ export const PARTS = {
   git: p(
     "persist",
     "Checkpoints",
-    2,
     "Saves the state before an edit, so a change that can't be fixed forward can be rolled back.",
     "Nothing until it is needed.",
     "Git, file checkpoints and rewind."
@@ -133,7 +119,6 @@ export const PARTS = {
   progress: p(
     "persist",
     "Progress file",
-    2,
     "A running record of what is done and what was learned. Survives a new session, and keeps dull steps from being dropped.",
     "1 cell, every turn.",
     "Plan and todo files, progress notes an agent reads when it picks work back up.",
@@ -143,7 +128,6 @@ export const PARTS = {
   tests: p(
     "verify",
     "Tests",
-    1,
     "Runs the tests before the agent is allowed to say done. Catches wrong logic.",
     "One extra turn and 1 cell per check.",
     "Self-verification: stop hooks and test runs that gate the end of a turn.",
@@ -152,7 +136,6 @@ export const PARTS = {
   shots: p(
     "verify",
     "Screenshots",
-    2,
     "Looks at the result in a browser. Catches what tests can't see.",
     "One extra turn and 2 cells per look. Pictures are heavy.",
     "Browser tools and screenshots for visual checks."
@@ -160,7 +143,6 @@ export const PARTS = {
   logs: p(
     "verify",
     "Logs",
-    2,
     "Reads what the running program printed. Catches failures that only show up live.",
     "One extra turn and 1 cell per check.",
     "Reading logs and traces to observe behaviour.",
@@ -170,7 +152,6 @@ export const PARTS = {
   compact: p(
     "control",
     "Compaction",
-    2,
     "When the window is 70% full, squashes old results into a one-cell summary.",
     "One extra turn each time it fires, and it rewrites the window.",
     "Auto-compaction, the usual answer to context rot."
@@ -178,7 +159,6 @@ export const PARTS = {
   subs: p(
     "control",
     "Subagents",
-    3,
     "Sends helpers to dig, each with its own window, all at once. One cell comes back from each, and it takes the main agent a single turn.",
     "The helpers' own tokens. Usually more in total, for less time and a cleaner window.",
     "Subagents and orchestration: context isolation more than parallelism."
@@ -186,7 +166,6 @@ export const PARTS = {
   loop: p(
     "control",
     "Keep-going loop",
-    3,
     "When the model stops early, starts it again in a clean window with the same goal.",
     "Each restart forgets everything that isn't written down.",
     "The 'Ralph loop': intercept the exit, re-inject the prompt in a fresh context, let the files carry the state."
@@ -194,12 +173,37 @@ export const PARTS = {
   router: p(
     "control",
     "Router",
-    2,
     "Hands the easy steps to a small, cheap model.",
     "Nothing. Easy steps cost a fifth.",
     "Model routing behind a swappable model adapter."
   ),
 };
+
+// What shows under the request when a part is tapped.
+const SHORT = {
+  tools: "Read and edit files.",
+  shell: "Run any command.",
+  mcp: "Reach services outside the machine.",
+  convo: "Keep earlier messages in view.",
+  prompt: "Standing instructions.",
+  memory: "Project know-how, loaded every session.",
+  skills: "How-to guides, opened only when needed.",
+  cache: "Re-read the unchanged part at a tenth of the price.",
+  perms: "Ask the user before a risky step.",
+  sandbox: "Run in a box nothing escapes from.",
+  shield: "Label outside text as data, not orders.",
+  files: "Write things down. Park long results on disk.",
+  git: "Roll back an edit that went wrong.",
+  progress: "A to-do list that survives a restart.",
+  tests: "Run the tests before saying done.",
+  shots: "Look at the screen before saying done.",
+  logs: "Read what the running program printed.",
+  compact: "Squash old results when nearly full.",
+  subs: "Helpers, each with a window of its own.",
+  loop: "Start it again when it stops early.",
+  router: "A cheap model for the easy steps.",
+};
+for (const id in SHORT) PARTS[id].short = SHORT[id];
 
 export const ORDER = {
   context: ["convo", "prompt", "memory", "skills", "cache"],
@@ -302,6 +306,10 @@ export const FAILS = {
   late: {
     say: () => "One thing at a time took too long. They needed it sooner.",
     fix: () => "subs",
+  },
+  pricey: {
+    say: () => "It got there, but the bill is far too high.",
+    fix: () => "cache",
   },
   runaway: {
     say: () => "It never stopped. The budget is gone.",

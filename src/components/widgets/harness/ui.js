@@ -1,6 +1,7 @@
 // The board is a diagram: the model in the middle, six branches of harness
-// parts around it. The player picks a job, connects parts, runs it, and reads
-// where it broke. Progress lives in localStorage under one key.
+// parts around it. Jobs come one at a time. The player runs one, reads where
+// it broke, connects the part that appears, and moves on. Progress lives in
+// localStorage under one key.
 
 import { simulate } from "./engine.js";
 import { JOBS } from "./jobs.js";
@@ -8,8 +9,9 @@ import { BRANCHES, PARTS, ORDER, FAILS } from "./world.js";
 import { icon } from "./icons.js";
 import { openBench } from "./bench-ui.js";
 import { openDrill } from "./drill.js";
+import { advise } from "./guide.js";
 
-const KEY = "ah:v2";
+const KEY = "ah:v3";
 const ALL = Object.keys(PARTS);
 const FACE = {
   notool: "confused",
@@ -61,16 +63,16 @@ export function mountHarness(root) {
 
   const saved = load();
   const everything = new URLSearchParams(location.search).has("all");
+  const LAST = JOBS.length - 1;
   const state = {
     owned: everything ? [...ALL] : saved.owned || [],
-    seen: everything ? BRANCHES.map(b => b.id) : saved.seen || [],
-    stars: saved.stars || {},
     on: saved.on || {},
-    at: saved.at || JOBS[0].id,
+    best: saved.best || {},
+    top: everything ? LAST : Math.min(saved.top || 0, LAST),
+    at: Math.min(saved.at || 0, LAST),
     sound: !!saved.sound,
     running: false,
     fast: false,
-    hints: 3,
     runId: 0,
   };
   const save = () => {
@@ -79,9 +81,9 @@ export function mountHarness(root) {
         KEY,
         JSON.stringify({
           owned: state.owned,
-          seen: state.seen,
-          stars: state.stars,
           on: state.on,
+          best: state.best,
+          top: state.top,
           at: state.at,
           sound: state.sound,
         })
@@ -91,13 +93,17 @@ export function mountHarness(root) {
     }
   };
 
-  const job = () => JOBS.find(j => j.id === state.at) || JOBS[0];
+  const job = () => JOBS[state.at];
   const owns = id => state.owned.includes(id);
-  const earned = () => Object.values(state.stars).reduce((n, s) => n + s, 0);
-  const spent = () =>
-    everything ? 0 : state.owned.reduce((n, id) => n + PARTS[id].price, 0);
-  const bank = () => earned() - spent();
-  const wired = () => (state.on[state.at] ||= [...state.owned]);
+  // A new job starts with the harness the last one ended with.
+  const wired = () => {
+    const J = job();
+    if (!state.on[J.id]) {
+      const prev = state.at ? state.on[JOBS[state.at - 1].id] : null;
+      state.on[J.id] = (prev || []).filter(owns);
+    }
+    return state.on[J.id];
+  };
   const isOn = id => wired().includes(id);
 
   // ---------- sound ----------
@@ -124,12 +130,19 @@ export function mountHarness(root) {
   root.innerHTML = "";
   const wrap = h("div", "ah-wrap");
   const head = h("div", "ah-head");
-  const nameEl = h(
-    "h2",
-    "ah-name",
-    "<small>Agent = Model + Harness</small>Harness"
-  );
-  const bankEl = h("div", "ah-bank");
+  const nameEl = h("h2", "ah-name", "Harness");
+  const pager = h("div", "ah-pager");
+  const mkStep = (name, label, by) => {
+    const b = h("button", "ah-round", icon(name));
+    b.type = "button";
+    b.setAttribute("aria-label", label);
+    b.addEventListener("click", () => go(state.at + by));
+    return b;
+  };
+  const prevBtn = mkStep("back", "Previous job", -1);
+  const nextBtn = mkStep("fwd", "Next job", 1);
+  const countEl = h("span", "ah-count");
+  pager.append(prevBtn, countEl, nextBtn);
   const tools = h("div", "ah-tools");
   const mkTool = (name, label, fn) => {
     const b = h("button", "ah-round", icon(name));
@@ -140,12 +153,15 @@ export function mountHarness(root) {
     tools.append(b);
     return b;
   };
-  head.append(nameEl, bankEl, tools);
+  head.append(nameEl, pager, tools);
 
   const board = h("div", "ah-board");
+  const askEl = h("p", "ah-ask");
   const tipEl = h("p", "ah-tip");
   tipEl.setAttribute("aria-live", "polite");
   const heartsEl = h("div", "ah-hearts");
+  const top = h("div", "ah-top");
+  top.append(askEl, heartsEl, tipEl);
   const map = h("div", "ah-map");
   const wires = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   wires.setAttribute("class", "ah-wires");
@@ -167,6 +183,7 @@ export function mountHarness(root) {
   }
   map.append(modelEl, dot);
 
+  const dock = h("div", "ah-dock");
   const winHead = h("div", "ah-winhead");
   const winEl = h("div", "ah-win");
   const cellsEl = h("div", "ah-cells");
@@ -177,7 +194,7 @@ export function mountHarness(root) {
     "ah-meter",
     `<div class="ah-bar"><span class="ah-fillbar"></span><span class="ah-partick"></span></div><div class="ah-nums"><span class="ah-tok"> </span><span class="ah-par"></span></div>`
   );
-  board.append(tipEl, heartsEl, map, winHead, winEl, meter);
+  board.append(top, map);
 
   const actions = h("div", "ah-actions");
   const mkBtn = (cls, ic, label) => {
@@ -187,15 +204,12 @@ export function mountHarness(root) {
     return b;
   };
   const hintBtn = mkBtn("", "bulb", "Hint");
-  const trimBtn = mkBtn("", "x", "All off");
   const runBtn = mkBtn("ah-run", "play", "Run");
-
-  const jobsEl = h("nav", "ah-jobs");
-  jobsEl.setAttribute("aria-label", "Jobs");
 
   const overlay = h("div", "ah-overlay");
   overlay.hidden = true;
-  wrap.append(head, board, actions, jobsEl);
+  dock.append(winHead, winEl, meter, actions);
+  wrap.append(head, board, dock);
   root.append(wrap, overlay);
 
   const notesBtn = mkTool("book", "Field notes", () => showNotes());
@@ -218,57 +232,35 @@ export function mountHarness(root) {
   // ---------- drawing ----------
   function partEl(id) {
     const P = PARTS[id];
-    const own = owns(id);
     const b = h(
       "button",
-      `ah-part${own ? (isOn(id) ? " ah-on" : " ah-off") : " ah-locked"}`,
-      `${icon(own ? id : "lock")}<span>${P.name}</span>${own ? "" : `<u>${P.price ? `★${P.price}` : "free"}</u>`}`
+      `ah-part ${isOn(id) ? "ah-on" : "ah-off"}`,
+      `${icon(id)}<span>${P.name}</span>`
     );
     b.type = "button";
     b.dataset.part = id;
-    b.setAttribute(
-      "aria-label",
-      own
-        ? `${P.name}, ${isOn(id) ? "connected" : "disconnected"}`
-        : `${P.name}, locked, ${P.price ? `${P.price} stars` : "free"}`
-    );
-    if (own) b.setAttribute("aria-pressed", String(isOn(id)));
+    b.setAttribute("aria-label", P.name);
+    b.setAttribute("aria-pressed", String(isOn(id)));
     return b;
   }
 
   function draw() {
     const J = job();
-    bankEl.innerHTML = `${icon("star")}<b>${bank()}</b>`;
-    bankEl.setAttribute("aria-label", `${bank()} stars to spend`);
     notesBtn.dataset.count = state.owned.length || "";
+    countEl.textContent = `${state.at + 1} / ${JOBS.length}`;
+    prevBtn.disabled = state.at === 0;
+    nextBtn.disabled = state.at >= state.top;
 
     for (const b of BRANCHES) {
       const e = branchEls[b.id];
-      const seen = state.seen.includes(b.id);
-      e.classList.toggle("ah-fog", !seen);
+      const mine = ORDER[b.id].filter(owns);
+      e.classList.toggle("ah-fog", !mine.length);
       e.innerHTML = "";
-      if (!seen) continue;
+      if (!mine.length) continue;
       e.append(h("h3", "", b.name));
       const parts = h("div", "ah-parts");
-      for (const id of ORDER[b.id]) parts.append(partEl(id));
+      for (const id of mine) parts.append(partEl(id));
       e.append(parts);
-    }
-
-    // jobs
-    jobsEl.innerHTML = "";
-    for (const j of JOBS) {
-      const s = state.stars[j.id] || 0;
-      const b = h(
-        "button",
-        "ah-job",
-        `<span>${j.name}</span><i>${[0, 1, 2].map(k => `<em class="${k < s ? "ah-on" : ""}">${icon("star")}</em>`).join("")}</i>`
-      );
-      b.type = "button";
-      if (j.id === state.at) b.setAttribute("aria-current", "true");
-      if (s) b.dataset.stars = s;
-      b.setAttribute("aria-label", `${j.name}${s ? `, ${s} of 3 stars` : ""}`);
-      b.addEventListener("click", () => go(j.id));
-      jobsEl.append(b);
     }
 
     // window
@@ -283,20 +275,18 @@ export function mountHarness(root) {
       icon("heart")
     ).join("");
 
-    hintBtn.disabled = state.hints <= 0;
-    hintBtn.querySelector("span").textContent =
-      state.hints < 3 ? `Hint ${state.hints}` : "Hint";
-    const any = wired().length > 0;
-    trimBtn.querySelector("span").textContent = any ? "All off" : "All on";
-    trimBtn.disabled = !state.owned.length;
-
     rest();
     requestAnimationFrame(drawWires);
   }
 
   function ask() {
-    tipEl.textContent = `“${job().ask}”`;
-    tipEl.classList.remove("ah-bad");
+    askEl.textContent = `“${job().ask}”`;
+    note("");
+  }
+
+  function note(text, bad = false) {
+    tipEl.textContent = text;
+    tipEl.classList.toggle("ah-bad", bad);
   }
 
   // The window as it will be before the first turn.
@@ -326,7 +316,7 @@ export function mountHarness(root) {
     let out = "";
     for (const b of BRANCHES) {
       const live = ORDER[b.id].some(id => owns(id) && isOn(id));
-      if (!state.seen.includes(b.id) || !live) continue;
+      if (!live) continue;
       const from = centre(branchEls[b.id]);
       const dx = to.x - from.x;
       const dy = to.y - from.y;
@@ -381,7 +371,7 @@ export function mountHarness(root) {
     }
     for (const e of have.values()) e.remove();
     const fill = win.reduce((n, b) => n + b.size, 0);
-    winHead.innerHTML = `<span>window</span><span class="ah-clock"></span><span class="${fill > N ? "ah-bad" : ""}">${fill}/${N}</span>`;
+    winHead.innerHTML = `<button type="button" class="ah-winq" aria-label="What is the context window?">Context window<i>?</i></button><span class="ah-clock"></span><span class="${fill > N ? "ah-bad" : ""}">${fill}/${N}</span>`;
     setClock(clock);
   }
   let clock = 0;
@@ -400,7 +390,7 @@ export function mountHarness(root) {
     meter.querySelector(".ah-fillbar").style.transform = `scaleX(${pct / 100})`;
     meter.classList.toggle("ah-overpar", tok > par);
     meter.querySelector(".ah-tok").firstChild.textContent = `${tok} tokens`;
-    meter.querySelector(".ah-par").textContent = `par ${par}`;
+    meter.querySelector(".ah-par").textContent = `leanest ${par}`;
   }
 
   let sayTimer;
@@ -448,15 +438,14 @@ export function mountHarness(root) {
   // ---------- parts ----------
   function describe(id) {
     const P = PARTS[id];
-    tipEl.textContent = `${P.name}${isOn(id) ? "" : " (off)"}. ${P.does}`;
-    tipEl.classList.remove("ah-bad");
+    note(`${P.name}${isOn(id) ? "" : ", off"}. ${P.short}`);
   }
 
   function toggle(id) {
     const set = wired();
     if (set.includes(id)) {
       // anything that leans on this part goes with it
-      state.on[state.at] = set.filter(x => x !== id && PARTS[x].needs !== id);
+      state.on[job().id] = set.filter(x => x !== id && PARTS[x].needs !== id);
     } else {
       set.push(id);
       const dep = PARTS[id].needs;
@@ -468,83 +457,54 @@ export function mountHarness(root) {
     describe(id);
   }
 
-  function unlock(id) {
+  // A part the job introduces arrives on the map, switched off.
+  function hand(id) {
     state.owned.push(id);
-    const set = wired();
-    if (!set.includes(id)) set.push(id);
-    const dep = PARTS[id].needs;
-    if (dep && owns(dep) && !set.includes(dep)) set.push(dep);
     blip(660, 0.09);
     setTimeout(() => blip(880, 0.12), 90);
     save();
-    closeOverlay();
     draw();
-    describe(id);
-    elOf(id)?.classList.add("ah-new");
+    elOf(id)?.classList.add("ah-new", "ah-hinted");
   }
 
-  function offer(id) {
-    const P = PARTS[id];
-    const B = branchOf(id);
-    const body = sheet(P.name);
-    const dep = P.needs && !owns(P.needs) ? PARTS[P.needs].name : null;
-    const short = bank() < P.price;
-    body.innerHTML = `<p class="ah-sub">${B.name} · ${B.ask}</p>${noteCard(id)}`;
-    const b = h(
-      "button",
-      "ah-btn ah-run ah-unlock",
-      `<span>${P.price ? `Unlock for ★${P.price}` : "Take it, it's free"}</span>`
-    );
-    b.type = "button";
-    b.disabled = short || !!dep;
-    b.addEventListener("click", () => unlock(id));
-    body.append(b);
-    if (dep || short)
-      body.append(
-        h(
-          "p",
-          "ah-sub ah-short",
-          dep
-            ? `Needs ${dep} first.`
-            : `You have ★${bank()}. Clear a job, or beat par on one, to earn more.`
-        )
-      );
-    if (!b.disabled) b.focus();
+  // Point at the part to change. Returns the words to add to the tip.
+  function point(a) {
+    const name = PARTS[a.part].name;
+    if (a.kind === "new") {
+      hand(a.part);
+      return `New part: ${name}. Tap it.`;
+    }
+    elOf(a.part)?.classList.add("ah-hinted");
+    return a.kind === "on"
+      ? `${name} is switched off.`
+      : `Too much plugged in. Try without ${name}.`;
   }
 
   map.addEventListener("click", ev => {
     if (state.running) return;
     const p = ev.target.closest("[data-part]");
     if (!p) return;
-    const id = p.dataset.part;
-    if (owns(id)) toggle(id);
-    else offer(id);
+    toggle(p.dataset.part);
+  });
+  winHead.addEventListener("click", ev => {
+    if (ev.target.closest(".ah-winq")) showWindow();
   });
 
   hintBtn.addEventListener("click", () => {
     if (state.running) return;
     const J = job();
-    const want = J.sol.find(id => !owns(id) || !isOn(id));
-    state.hints--;
-    draw();
-    if (!want) {
-      const extra = wired().filter(id => !J.sol.includes(id));
-      tipEl.textContent = extra.length
-        ? `Everything this job needs is connected. So is ${PARTS[extra[0]].name}, which it can do without.`
-        : "That's the leanest harness for this job. Run it.";
+    const res = simulate(J, wired());
+    if (res.ok) {
+      const idle = wired().filter(id => !res.used.includes(id));
+      note(
+        res.tokens <= J.par || !idle.length
+          ? "This harness does the job. Run it."
+          : `This works. ${PARTS[idle[0]].name} is along for the ride, though.`
+      );
       return;
     }
-    reveal(PARTS[want].branch);
-    tipEl.textContent = owns(want)
-      ? `${PARTS[want].name} is switched off.`
-      : `${PARTS[want].name} would help here. It's in ${branchOf(want).name}.`;
-    elOf(want)?.classList.add("ah-hinted");
-  });
-  trimBtn.addEventListener("click", () => {
-    if (state.running) return;
-    state.on[state.at] = wired().length ? [] : [...state.owned];
-    save();
-    draw();
+    const a = advise(J, wired(), state.owned, res);
+    note(a ? point(a) : "");
   });
   runBtn.addEventListener("click", () => {
     if (state.running) {
@@ -565,15 +525,6 @@ export function mountHarness(root) {
   };
   document.addEventListener("keydown", onKey);
 
-  function reveal(branch) {
-    if (state.seen.includes(branch)) return false;
-    state.seen.push(branch);
-    save();
-    draw();
-    branchEls[branch].classList.add("ah-appear");
-    return true;
-  }
-
   // ---------- running ----------
   async function run() {
     const J = job();
@@ -584,8 +535,8 @@ export function mountHarness(root) {
     runBtn.querySelector("span").textContent = "Skip";
     ask();
     root
-      .querySelectorAll(".ah-hinted,.ah-new,.ah-appear")
-      .forEach(e => e.classList.remove("ah-hinted", "ah-new", "ah-appear"));
+      .querySelectorAll(".ah-hinted,.ah-new")
+      .forEach(e => e.classList.remove("ah-hinted", "ah-new"));
     const res = simulate(J, wired());
     const nap = ms => (state.fast ? Promise.resolve() : wait(ms));
     botEl.dataset.face = "idle";
@@ -698,14 +649,17 @@ export function mountHarness(root) {
       botEl.dataset.face = "happy";
       blip(660, 0.09);
       setTimeout(() => blip(880, 0.12), 90);
-      const before = state.stars[J.id] || 0;
-      state.stars[J.id] = Math.max(before, res.stars);
+      state.best[J.id] = Math.min(state.best[J.id] ?? Infinity, res.tokens);
+      if (state.at === state.top && state.top < LAST) state.top++;
+      // solved another way: the part this job introduces still arrives
+      const extra = J.gives.filter(id => !owns(id));
+      state.owned.push(...extra);
       save();
       await wait(state.fast ? 150 : 600);
       draw();
       renderWin(res.events[res.events.length - 1].win, false);
       setMeter(res.tokens);
-      showCard(res, state.stars[J.id] - before);
+      showCard(res, extra);
       return;
     }
     botEl.dataset.face = FACE[res.reason] || "sad";
@@ -714,36 +668,25 @@ export function mountHarness(root) {
       winEl.classList.add("ah-shake");
       setTimeout(() => winEl.classList.remove("ah-shake"), 500);
     }
-    const F = FAILS[res.reason];
-    const fix = J.fix?.[res.reason] ?? F.fix(res.info);
-    let msg = F.say(res.info);
-    const last = res.events[res.events.length - 1].win;
-    const fresh = reveal(PARTS[fix].branch);
-    if (fresh) {
-      renderWin(last, false);
+    let msg = FAILS[res.reason].say(res.info);
+    const a = advise(J, wired(), state.owned, res);
+    // A new part always arrives. Other pointers fade out on later jobs,
+    // where the Hint button gives them instead.
+    if (a && (a.kind === "new" || J.tier <= 1)) {
+      msg += ` ${point(a)}`;
+      renderWin(res.events[res.events.length - 1].win, false);
       setMeter(res.tokens);
     }
-    if (owns(fix) && !isOn(fix)) msg += ` ${PARTS[fix].name} is switched off.`;
-    else if (!owns(fix)) {
-      if (J.tier <= 1) {
-        msg += ` ${PARTS[fix].name} would fix that.`;
-        elOf(fix)?.classList.add("ah-hinted");
-      } else
-        msg += fresh
-          ? ` Something new on the map: ${branchOf(fix).name}.`
-          : ` Look in ${branchOf(fix).name}.`;
-    }
-    tipEl.textContent = msg;
-    tipEl.classList.add("ah-bad");
+    note(msg, true);
   }
 
-  function go(id) {
+  function go(i) {
+    if (i < 0 || i > state.top) return;
     state.runId++;
     state.running = false;
     root.classList.remove("ah-running");
     runBtn.querySelector("span").textContent = "Run";
-    state.at = id;
-    state.hints = 3;
+    state.at = i;
     blocksEl.innerHTML = "";
     botEl.dataset.face = "idle";
     say("");
@@ -785,23 +728,14 @@ export function mountHarness(root) {
     return `<article class="ah-note ah-c-${P.branch}"><header>${icon(id)}<div><small>${branchOf(id).name}</small><h4>${P.name}</h4></div></header><p>${P.does}</p><p class="ah-wild"><b>Costs</b> ${P.cost}</p><p class="ah-wild"><b>In the wild</b> ${P.wild}</p></article>`;
   }
 
-  function showCard(res, gained) {
+  function showCard(res, extra) {
     const J = job();
     overlay.innerHTML = "";
     overlay.hidden = false;
     const s = h("div", "ah-sheet ah-clear");
     s.setAttribute("role", "dialog");
     s.setAttribute("aria-label", "Job done");
-    const stars = [0, 1, 2]
-      .map(
-        k =>
-          `<span class="${k < res.stars ? "ah-on" : ""} ah-pop" style="--d:${k * 110}ms">${icon("star")}</span>`
-      )
-      .join("");
-    const why = [];
-    if (res.tokens > J.par) why.push(`${res.tokens - J.par} over par`);
-    else if (res.tokens < J.par) why.push(`${J.par - res.tokens} under par`);
-    if (res.lost > (J.asks || 0)) why.push("asked the user more than needed");
+    const lean = res.tokens <= J.par;
     const idle = wired().filter(id => !res.used.includes(id));
     const did = res.used
       .map(
@@ -809,30 +743,42 @@ export function mountHarness(root) {
           `<span class="ah-did ah-c-${PARTS[id].branch}">${icon(id)}${PARTS[id].name}</span>`
       )
       .join("");
-    s.innerHTML = `<p class="ah-kicker">${J.name}</p><div class="ah-stars ah-big">${stars}</div><p class="ah-why">${res.tokens} tokens, ${res.turns} turns${why.length ? ` · ${why.join(" · ")}` : ""}</p><div class="ah-dids">${did}</div>${idle.length ? `<p class="ah-sub">Connected but idle: ${idle.map(id => PARTS[id].name).join(", ")}. Idle parts can still take up cells.</p>` : ""}${gained ? `<p class="ah-gain">${icon("star")} +${gained} to spend</p>` : ""}`;
+    const why = lean
+      ? "As lean as it gets."
+      : idle.length
+        ? `Leanest is ${J.par}. ${idle.length > 2 ? `${idle.length} parts` : idle.map(id => PARTS[id].name).join(" and ")} sat idle.`
+        : `Leanest is ${J.par}. There's a cheaper way.`;
+    s.innerHTML = `<p class="ah-kicker">${J.name}</p><div class="ah-stars ah-big"><span class="${lean ? "ah-on" : ""} ah-pop">${icon(lean ? "star" : "check")}</span></div><p class="ah-score">${res.tokens} tokens</p><p class="ah-why">${why}</p><div class="ah-dids">${did}</div>${extra.length ? `<p class="ah-sub">New part: ${extra.map(id => PARTS[id].name).join(", ")}. It would have done this more cleanly.</p>` : ""}`;
     const row = h("div", "ah-actions");
     const again = h("button", "ah-btn", "<span>Tweak</span>");
     again.type = "button";
     again.addEventListener("click", closeOverlay);
-    const next = JOBS.find(j => !state.stars[j.id]);
+    const more = state.at < LAST;
     const fwd = h(
       "button",
       "ah-btn ah-run",
-      `<span>${next ? "Next job" : "Field notes"}</span>`
+      `<span>${more ? "Next" : "Try a real model"}</span>`
     );
     fwd.type = "button";
-    fwd.addEventListener("click", () => (next ? go(next.id) : showNotes()));
+    fwd.addEventListener("click", () =>
+      more ? go(state.at + 1) : openBench(sheet("Live bench"))
+    );
     row.append(again, fwd);
     s.append(row);
     overlay.append(s);
     fwd.focus();
   }
 
+  function showWindow() {
+    const body = sheet("Context window");
+    body.innerHTML = `<p class="ah-sub">Everything the model can see right now. It has no other memory.</p><ul class="ah-legend"><li><i class="ah-block ah-k-task"></i>The request.</li><li><i class="ah-block ah-k-def ah-c-action"></i>A connected part's instructions. There every turn.</li><li><i class="ah-block ah-c-action"><span class="ah-gems"><i class="ah-gem"></i></span></i>A result. A dot is a fact the job needs.</li></ul><p class="ah-sub">Each turn the model re-reads the whole strip, so a fuller window costs more tokens. Past the last cell, the job crashes.</p>`;
+  }
+
   function showNotes() {
     const body = sheet("Field notes");
     const done = state.owned.length === ALL.length;
     body.innerHTML =
-      `<p class="ah-sub">${done ? "The whole harness." : `${state.owned.length} of ${ALL.length} parts.`} One card for each part you own.</p><div class="ah-notes">` +
+      `<p class="ah-sub">${done ? "The whole harness." : `${state.owned.length} of ${ALL.length} parts so far.`}</p><div class="ah-notes">` +
       BRANCHES.map(b => ORDER[b.id].filter(owns).map(noteCard).join("")).join(
         ""
       ) +
@@ -846,7 +792,5 @@ export function mountHarness(root) {
   });
 
   draw();
-  if (!state.owned.length && !earned())
-    tipEl.textContent = `“${job().ask}” Press Run. This is a model with nothing around it.`;
-  else ask();
+  ask();
 }

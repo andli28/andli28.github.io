@@ -1,6 +1,6 @@
 ---
 /**
- * Harness: a plan-then-run puzzle about what the code around a model does.
+ * Harness: build the harness around a model, one job and one part at a time.
  * Meant for a Lab entry with `fullscreen: true`. Progress lives in
  * localStorage. The board is built by harness/ui.js.
  *
@@ -110,38 +110,44 @@
   }
 
   .ah-wrap {
-    max-width: 720px;
-    margin: 0 auto;
-    padding: 52px 16px 28px;
+    box-sizing: border-box;
+    min-height: 100svh;
+    padding: 10px 16px 18px;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 10px;
   }
 
   /* ---- header ---- */
   .ah-head {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 14px;
+    padding-left: 62px;
   }
   .ah-name {
     margin: 0;
-    font-size: 26px;
+    font-size: 20px;
     font-weight: 800;
     letter-spacing: -0.02em;
     line-height: 1.1;
-    flex: 1;
-    min-width: 0;
-    text-wrap: balance;
   }
-  .ah-name small {
-    display: block;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+  .ah-pager {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-right: auto;
+  }
+  .ah-count {
+    min-width: 4.2em;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 800;
     color: var(--ah-mute);
-    margin-bottom: 3px;
+    font-variant-numeric: tabular-nums;
+  }
+  .ah-round:disabled {
+    opacity: 0.35;
   }
   .ah-stars {
     display: flex;
@@ -203,15 +209,35 @@
   /* ---- board ---- */
   .ah-board {
     position: relative;
-    background: var(--ah-card);
-    border-radius: 22px;
-    padding: 16px 16px 14px;
-    box-shadow: 0 1px 0 var(--ah-line);
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  .ah-top {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    column-gap: 8px;
+    text-align: center;
+  }
+  .ah-ask {
+    grid-column: 2;
+    margin: 0;
+    max-width: 34ch;
+    font-size: 19px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    min-height: 2.5em;
+    display: grid;
+    align-items: end;
+    text-wrap: balance;
   }
   .ah-tip {
-    margin: 0;
-    min-height: 2.8em;
-    padding-right: 64px;
+    grid-column: 1 / -1;
+    margin: 4px auto 0;
+    min-height: 1.4em;
+    max-width: 52ch;
     color: var(--ah-mute);
     font-weight: 600;
     text-wrap: pretty;
@@ -220,9 +246,8 @@
     color: var(--ah-red);
   }
   .ah-hearts {
-    position: absolute;
-    top: 16px;
-    right: 16px;
+    grid-column: 3;
+    justify-self: start;
     display: flex;
     gap: 2px;
     color: var(--ah-red);
@@ -273,9 +298,11 @@
       "control context guard"
       "persist model action"
       ". verify .";
+    flex: 1;
     gap: 34px 26px;
     align-items: center;
-    margin: 30px 0 6px;
+    align-content: space-evenly;
+    margin: 18px 0 0;
     padding: 18px 12px;
     border: 1.5px dashed var(--ah-edge);
     border-radius: 20px;
@@ -286,7 +313,7 @@
     top: -9px;
     left: 16px;
     padding: 0 8px;
-    background: var(--ah-card);
+    background: var(--ah-bg);
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.14em;
@@ -328,6 +355,8 @@
   .ah-branch {
     position: relative;
     z-index: 1;
+    justify-self: center;
+    min-width: 64px;
     min-height: 64px;
     display: flex;
     flex-direction: column;
@@ -335,7 +364,7 @@
     gap: 7px;
     padding: 6px;
     border-radius: 14px;
-    background: var(--ah-card);
+    background: var(--ah-bg);
   }
   .ah-b-control {
     grid-area: control;
@@ -421,29 +450,6 @@
   .ah-part.ah-off span {
     color: var(--ah-mute);
   }
-  .ah-part.ah-locked {
-    background: transparent !important;
-    box-shadow: none;
-    outline: 1.5px dashed var(--ah-edge);
-    outline-offset: -1.5px;
-    color: var(--ah-mute) !important;
-  }
-  .ah-part.ah-locked span {
-    color: var(--ah-mute);
-  }
-  .ah-part u {
-    position: absolute;
-    top: -7px;
-    right: -5px;
-    padding: 0 5px;
-    border-radius: 8px;
-    background: var(--ah-task);
-    color: #3a2f00;
-    font-size: 9.5px;
-    font-weight: 800;
-    line-height: 15px;
-    text-decoration: none;
-  }
   .ah-part.ah-new {
     animation: ah-settle 260ms var(--ah-ease);
   }
@@ -496,8 +502,7 @@
     flex: none;
   }
   @media (hover: hover) and (pointer: fine) {
-    .ah-part:hover,
-    .ah-job:hover {
+    .ah-part:hover {
       transform: translateY(-1px);
     }
     .ah-round:hover {
@@ -699,76 +704,6 @@
     width: 15px;
     height: 15px;
   }
-  /* ---- stars to spend, jobs ---- */
-  .ah-bank {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    height: 36px;
-    padding: 0 12px 0 9px;
-    border-radius: 18px;
-    background: var(--ah-tile);
-    box-shadow: 0 2px 0 var(--ah-edge);
-    color: var(--ah-task);
-    font-variant-numeric: tabular-nums;
-  }
-  .ah-bank .ah-i {
-    width: 18px;
-    height: 18px;
-    stroke-width: 0;
-  }
-  .ah-bank b {
-    color: var(--ah-ink);
-    font-weight: 800;
-  }
-  .ah-jobs {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-  }
-  .ah-job {
-    display: flex !important;
-    align-items: center;
-    justify-content: space-between;
-    gap: 6px;
-    min-height: 42px;
-    padding: 6px 10px 6px 12px !important;
-    border-radius: 13px;
-    background: var(--ah-tile) !important;
-    box-shadow: 0 3px 0 var(--ah-edge);
-    text-align: left;
-    font-weight: 700;
-    font-size: 13.5px;
-    line-height: 1.15;
-    transition:
-      transform 120ms var(--ah-ease),
-      box-shadow 120ms var(--ah-ease);
-  }
-  .ah-job:active {
-    transform: translateY(2px);
-    box-shadow: 0 1px 0 var(--ah-edge);
-  }
-  .ah-job[aria-current="true"] {
-    background: var(--ah-accent) !important;
-    color: var(--ah-on-accent) !important;
-    box-shadow: 0 3px 0 var(--ah-accent-edge);
-  }
-  .ah-job i {
-    display: flex;
-    flex: none;
-    color: color-mix(in srgb, var(--ah-edge) 90%, transparent);
-  }
-  .ah-job[aria-current="true"] i {
-    color: rgb(255 255 255 / 0.3);
-  }
-  .ah-job em.ah-on {
-    color: var(--ah-task);
-  }
-  .ah-job i .ah-i {
-    width: 12px;
-    height: 12px;
-    stroke-width: 0;
-  }
   .ah-dids {
     display: flex;
     flex-wrap: wrap;
@@ -791,36 +726,21 @@
     width: 15px;
     height: 15px;
   }
-  .ah-gain {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    margin: 0;
-    font-weight: 800;
-    color: var(--ah-ink);
-  }
-  .ah-gain .ah-i {
-    color: var(--ah-task);
-    stroke-width: 0;
-  }
-  .ah-unlock {
-    width: 100%;
-    margin-top: 14px;
-  }
-  .ah-short {
-    margin: 10px 0 0;
-    text-align: center;
-  }
   .ah-note header {
     color: var(--c, var(--ah-accent)) !important;
   }
 
   /* ---- window ---- */
+  .ah-dock {
+    width: 100%;
+    max-width: 720px;
+    margin: 0 auto;
+  }
   .ah-winhead {
     display: flex;
     justify-content: space-between;
-    margin-top: 14px;
+    align-items: center;
+    margin-top: 4px;
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.1em;
@@ -830,6 +750,45 @@
   }
   .ah-clock {
     color: var(--ah-ink);
+  }
+  .ah .ah-winq {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    font-weight: inherit;
+  }
+  .ah-winq i {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--ah-tile);
+    box-shadow: 0 1px 0 var(--ah-edge);
+    font-style: normal;
+    letter-spacing: 0;
+  }
+  .ah-legend {
+    list-style: none;
+    margin: 0 0 14px;
+    padding: 0;
+    display: grid;
+    gap: 10px;
+    font-weight: 600;
+  }
+  .ah-legend li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .ah-legend .ah-block {
+    position: relative;
+    flex: none;
+    width: 44px;
+    height: 32px;
+    left: auto;
   }
   .ah-winhead .ah-bad {
     color: var(--ah-red);
@@ -1008,8 +967,9 @@
   /* ---- buttons ---- */
   .ah-actions {
     display: grid;
-    grid-template-columns: 1fr 1fr 1.6fr;
+    grid-template-columns: 1fr 2.4fr;
     gap: 8px;
+    margin-top: 14px;
   }
   .ah-btn {
     display: flex !important;
@@ -1096,8 +1056,22 @@
   .ah-clear .ah-stars {
     justify-content: center;
   }
+  .ah-score {
+    margin: 6px 0 0;
+    font-size: 22px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+  }
+  .ah-clear .ah-stars .ah-i {
+    color: var(--ah-green);
+    stroke-width: 2.5;
+  }
+  .ah-clear .ah-stars .ah-on .ah-i {
+    color: var(--ah-task);
+    stroke-width: 0;
+  }
   .ah-why {
-    margin: 6px 0 14px;
+    margin: 2px 0 14px;
     color: var(--ah-mute);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
@@ -1442,32 +1416,37 @@
 
   @media (max-width: 480px) {
     .ah-wrap {
-      padding-top: 46px;
-      gap: 12px;
+      padding: 8px 12px 14px;
     }
     .ah-name {
-      font-size: 22px;
+      display: none;
     }
-    .ah-board {
-      padding: 14px 12px 12px;
-      border-radius: 18px;
+    .ah-head {
+      gap: 8px;
+      padding-left: 50px;
+    }
+    .ah-ask {
+      font-size: 17px;
+    }
+    .ah-tip {
+      min-height: 2.8em;
     }
     .ah-map {
       gap: 26px 10px;
       padding: 16px 4px;
-      grid-template-columns: 1fr 100px 1fr;
+      grid-template-columns: 1fr 112px 1fr;
     }
     .ah-branch {
       padding: 4px 0;
     }
     .ah-part {
-      width: 47px;
+      width: 53px;
       padding: 6px 1px 4px !important;
       border-radius: 11px;
     }
     .ah-part span {
-      font-size: 7.6px;
-      letter-spacing: -0.02em;
+      font-size: 8px;
+      letter-spacing: -0.03em;
     }
     .ah-part .ah-i {
       width: 18px;
@@ -1480,13 +1459,6 @@
       width: 78px;
       height: 84px;
     }
-    .ah-jobs {
-      grid-template-columns: 1fr 1fr;
-    }
-    .ah-job {
-      font-size: 12.5px;
-      padding: 6px 8px 6px 10px !important;
-    }
     .ah-round {
       width: 34px;
       height: 34px;
@@ -1498,6 +1470,33 @@
     .ah-sheet {
       border-radius: 24px 24px 0 0;
       padding-bottom: calc(20px + env(safe-area-inset-bottom));
+    }
+  }
+
+  @media (min-width: 900px) {
+    .ah-map {
+      gap: 40px 48px;
+    }
+    .ah-part {
+      width: 84px;
+      padding: 10px 2px 8px !important;
+      border-radius: 15px;
+    }
+    .ah-part .ah-i {
+      width: 26px;
+      height: 26px;
+    }
+    .ah-part span {
+      font-size: 11.5px;
+    }
+    .ah-branch h3 {
+      font-size: 14px;
+    }
+    .ah-parts {
+      gap: 8px;
+    }
+    .ah-model {
+      scale: 1.3;
     }
   }
 
