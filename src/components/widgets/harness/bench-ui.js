@@ -72,8 +72,8 @@ export function openBench(body) {
     !hasWebGPU()
       ? "This browser has no WebGPU, so a real model can't run here. Try a current Chrome or Edge, or Safari 26."
       : real
-        ? `${real.name}, running in this tab on ExecuTorch. Results are measured and will vary. Built with Llama.`
-        : "Runs Llama 3.2 1B inside this tab on your GPU, using ExecuTorch. It downloads about 735 MB once, then your browser keeps it. Built with Llama.";
+        ? `${real.name}, running in this tab on ExecuTorch. Results are measured and will vary.`
+        : "Runs Qwen 3 0.6B inside this tab on your GPU, using ExecuTorch. It downloads about 400 MB once, then your browser keeps it.";
   function syncEngine() {
     segs[0].setAttribute("aria-pressed", String(!useReal));
     segs[1].setAttribute("aria-pressed", String(useReal));

@@ -267,16 +267,16 @@ export function simulate(job, parts) {
       fail("notool", { part: tool });
     }
     use(tool);
+    emit("signal", { from: "model", to: tool, step: i });
     const g = guard(S);
     const easy = S.easy && has("router");
     if (easy) use("router");
-    emit("signal", { from: "model", to: tool });
     charge("turn", easy ? 0.2 : 1);
     if (g === "skip") {
       push(block("err", 1, { part: "perms" }), "denied");
     } else {
       ran[i]++;
-      emit("signal", { from: tool, to: "model" });
+      emit("signal", { from: tool, to: "model", step: i });
       if (again && win.some(b => b.step === i && b.parked)) {
         // a second look at a parked result is a targeted read
         push(block("result", 1, { facts: [S.fact], step: i, part: tool }));
@@ -397,14 +397,14 @@ export function simulate(job, parts) {
         // every message arrives on its own
         win = [...standing(), block("task", 1)];
         prevIds = [];
-        emit("fresh", { why: "stateless" });
+        emit("fresh", { why: "stateless", step: pos });
         if ((S.needs || []).some(f => !sees(f))) {
           charge();
           fail("lostthread");
         }
       } else {
         use("convo");
-        emit("signal", { from: "convo", to: "model" });
+        emit("signal", { from: "convo", to: "model", step: pos });
         push(block("task", 1), "user");
       }
       pos++;
@@ -444,7 +444,7 @@ export function simulate(job, parts) {
       }
       use("files");
       charge();
-      emit("signal", { from: "model", to: "files" });
+      emit("signal", { from: "model", to: "files", step: pos });
       push(block("edit", 1, { part: "files" }), "write");
       pos++;
       return settle();

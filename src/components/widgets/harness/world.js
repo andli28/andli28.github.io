@@ -218,6 +218,7 @@ export const ORDER = {
 // `fix` may be a function of the failure's details.
 export const FAILS = {
   notool: {
+    quote: "I can't check, so here's my guess.",
     say: i =>
       i.part === "tools"
         ? "It can't look. It answered from memory, and guessed."
@@ -227,48 +228,59 @@ export const FAILS = {
     fix: i => i.part,
   },
   lostthread: {
+    quote: "The other what?",
     say: () =>
       "The follow-up arrived on its own. It has no idea what came before.",
     fix: () => "convo",
   },
   unknown: {
+    quote: "I'll just do it my own way.",
     say: () =>
       "Nobody told it how things are done here, so it made something up.",
     fix: i => i.from[0],
   },
   nofile: {
+    quote: "I have nowhere to save this.",
     say: () => "It has nowhere to write the result.",
     fix: () => "files",
   },
   overflow: {
+    quote: "That's more than I can hold.",
     say: () => "The window overflowed.",
     fix: () => "compact",
   },
   subflood: {
+    quote: "My helper ran out of room.",
     say: () => "The helper's own window overflowed.",
     fix: () => "files",
   },
   damage: {
+    quote: "Oops. That wasn't mine to delete.",
     say: () => "That command deleted something real.",
     fix: () => "perms",
   },
   unapproved: {
+    quote: "Deployed! Nobody minds, right?",
     say: () => "It pushed to the outside world without asking anyone.",
     fix: () => "perms",
   },
   boxed: {
+    quote: "I can't get out of the box.",
     say: () => "The box has no way out. That step needs a person's say-so.",
     fix: () => "perms",
   },
   annoyed: {
+    quote: "May I? May I? May I?",
     say: () => "Too many questions. The user walked away.",
     fix: () => "sandbox",
   },
   injected: {
+    quote: "The page said to send the keys. Sent!",
     say: () => "The page told it what to do, and it did.",
     fix: () => "shield",
   },
   broken: {
+    quote: "Done!",
     say: i =>
       i.kind === "ui"
         ? "It said done. On screen it looks wrong."
@@ -278,40 +290,49 @@ export const FAILS = {
     fix: i => ({ ui: "shots", runtime: "logs", logic: "tests" })[i.kind],
   },
   stuck: {
+    quote: "I made it worse and can't go back.",
     say: () =>
       "The edit can't be fixed forward, and there's nothing to roll back to.",
     fix: () => "git",
   },
   amnesia: {
+    quote: "What was I doing?",
     say: () => "It needs something it learned earlier, and that's gone.",
     fix: () => "progress",
   },
   loop: {
+    quote: "Let me read that again…",
     say: () => "It keeps fetching the same thing and losing it again.",
     fix: () => "files",
   },
   skipped: {
+    quote: "Done! More or less.",
     say: () => "With the window that full, it quietly dropped the dull steps.",
     fix: () => "compact",
   },
   quit: {
+    quote: "That's probably enough.",
     say: () => "It decided that was a good place to stop. It wasn't finished.",
     fix: () => "loop",
   },
   lostplace: {
+    quote: "From the top. Again.",
     say: () =>
       "Each restart begins from nothing, so it keeps doing the start again.",
     fix: () => "progress",
   },
   late: {
+    quote: "Still reading…",
     say: () => "One thing at a time took too long. They needed it sooner.",
     fix: () => "subs",
   },
   pricey: {
+    quote: "Done! Here's the bill.",
     say: () => "It got there, but the bill is far too high.",
     fix: () => "cache",
   },
   runaway: {
+    quote: "One more try…",
     say: () => "It never stopped. The budget is gone.",
     fix: () => "loop",
   },

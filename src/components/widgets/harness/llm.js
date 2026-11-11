@@ -2,7 +2,7 @@
 //   chat(messages, { job, summary, max }) → { text, in, out }
 //
 // `emulated` is a scripted weak model: it reads the real transcript and
-// behaves the way small models tend to. `realModel` is Llama 3.2 1B running in
+// behaves the way small models tend to. `realModel` is Qwen 3 0.6B running in
 // the browser on WebGPU (see executorch.js); nothing is downloaded until it
 // is asked for.
 

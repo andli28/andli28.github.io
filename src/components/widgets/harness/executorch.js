@@ -1,4 +1,4 @@
-// A real model for the Live bench: Llama 3.2 1B running in this tab on the
+// A real model for the Live bench: Qwen 3 0.6B running in this tab on the
 // GPU, through ExecuTorch's Wasm runtime and its WebGPU backend.
 //
 // Nothing here loads until the player asks for it. The loader script is
@@ -15,7 +15,7 @@
 const RUNTIME =
   "https://huggingface.co/executorch-community/ExecuTorch-WebGPU-Runtime/resolve/48a27434e9f3096f100d79a5d1e8437a124ca654/";
 const MODEL =
-  "https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-ExecuTorch-WebGPU/resolve/f2b116fc0b746ec8ba8adb93258b9e8b439cefa7/";
+  "https://huggingface.co/executorch-community/Qwen3-0.6B-ExecuTorch-WebGPU/resolve/65fa8ec0b8996b4a0157cdb89ea766b000b1134a/";
 
 const FILES = {
   script: "/vendor/executorch/executorch_wasm_lib.js",
@@ -32,22 +32,22 @@ const FILES = {
     bytes: 748496,
   },
   pte: {
-    url: `${MODEL}llama3_2_1b_instruct_q4gsw.pte`,
-    sha256: "49de6eec3a54f1f45a785152375edafec07cb0fd879a142100340fd2765c40a7",
-    bytes: 734868736,
+    url: `${MODEL}qwen3_0_6b_q4gsw.pte`,
+    sha256: "057af5734a6ce17cbf19598bcc0e972aed2401d1522eed41249675c1ab372ce6",
+    bytes: 400532224,
   },
 };
 
 export const SPEC = {
-  name: "Llama 3.2 1B",
-  credit: "Built with Llama",
+  name: "Qwen 3 0.6B",
   megabytes: Math.round(FILES.pte.bytes / 1e6),
   maxCtx: 8960,
   prefillMax: 512,
-  eos: [128001, 128008, 128009],
+  eos: [151645, 151643],
 };
 
-const CACHE = "harness-executorch-v1";
+const CACHE = "harness-executorch-v2";
+const OLD_CACHES = ["harness-executorch-v1"];
 
 async function sha256(bytes) {
   const d = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
@@ -58,6 +58,7 @@ async function sha256(bytes) {
 // before it was stored.
 async function fetchPinned(file, onProgress = () => {}) {
   const cache = globalThis.caches ? await caches.open(CACHE) : null;
+  if (cache) for (const old of OLD_CACHES) caches.delete(old).catch(() => {});
   const hit = await cache?.match(file.url);
   if (hit) {
     onProgress(1);
@@ -152,14 +153,17 @@ export class ChatLoop {
     this.committed = []; // the tokens resident in the model's cache
   }
 
+  // ChatML, the format of the Qwen family. The empty <think> block is what
+  // Qwen 3's own template writes when thinking is switched off.
   encode(messages) {
-    const enc = this.tokenizer.apply_chat_template(messages, {
-      add_generation_prompt: true,
-      tokenize: true,
-      return_tensor: false,
-    });
-    const ids = Array.isArray(enc) ? enc.flat(Infinity).map(Number) : [];
-    if (!ids.length) throw new Error("the chat template produced nothing");
+    let text = "";
+    for (const m of messages)
+      text += `<|im_start|>${m.role}\n${m.content}<|im_end|>\n`;
+    text += "<|im_start|>assistant\n<think>\n\n</think>\n\n";
+    const ids = Array.from(
+      this.tokenizer.encode(text, { add_special_tokens: false })
+    ).map(Number);
+    if (!ids.length) throw new Error("the prompt encoded to nothing");
     return ids;
   }
 

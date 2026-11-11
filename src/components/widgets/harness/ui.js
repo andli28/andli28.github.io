@@ -208,7 +208,10 @@ export function mountHarness(root) {
 
   const overlay = h("div", "ah-overlay");
   overlay.hidden = true;
-  dock.append(winHead, winEl, meter, actions);
+  const feed = h("div", "ah-feed");
+  feed.setAttribute("role", "log");
+  feed.setAttribute("aria-label", "What is happening");
+  dock.append(feed, winHead, winEl, meter, actions);
   wrap.append(head, board, dock);
   root.append(wrap, overlay);
 
@@ -287,6 +290,94 @@ export function mountHarness(root) {
   function note(text, bad = false) {
     tipEl.textContent = text;
     tipEl.classList.toggle("ah-bad", bad);
+  }
+
+  // ---------- the log ----------
+  // One line per thing that happens, said by whoever did it.
+  function line(who, text, cls = "") {
+    feed.querySelector(".ah-idle")?.remove();
+    const P = PARTS[who];
+    const name = P ? P.name : who === "user" ? "User" : "Model";
+    const e = h(
+      "p",
+      `ah-line ${P ? `ah-c-${P.branch}` : `ah-by-${who}`} ${cls}`,
+      `<b>${P ? icon(who) : ""}${name}</b><span></span>`
+    );
+    e.lastChild.textContent = text;
+    feed.append(e);
+    feed.scrollTop = feed.scrollHeight;
+  }
+  function rule(text) {
+    feed.querySelector(".ah-idle")?.remove();
+    feed.append(h("p", "ah-rule", text));
+    feed.scrollTop = feed.scrollHeight;
+  }
+  function clearFeed() {
+    feed.innerHTML = `<p class="ah-idle">Press Run to watch it work.</p>`;
+  }
+  // What a signal between the model and a part means, in words.
+  const SIGNAL = {
+    "model>files": "long result parked on disk. Head and tail kept",
+    "model>progress": "ticked off",
+    "progress>model": "here's what is done so far",
+    "compact>model": "nearly full. Squashing old results into a summary",
+    "skills>model": "opened the how-to guide",
+    "model>subs": "helpers sent, one per topic",
+    "subs>model": "one short summary back",
+    "loop>model": "not finished. Again, with a clean window",
+    "git>model": "rolled back to before the edit",
+  };
+  function narrate(e) {
+    const J = job();
+    const S = e.step != null ? J.steps[e.step] : null;
+    switch (e.t) {
+      case "start":
+        for (const b of e.win)
+          if (b.facts.length && (b.kind === "memory" || b.kind === "prompt"))
+            line(
+              b.part,
+              b.kind === "memory"
+                ? "how we do things here, loaded"
+                : "instructions loaded"
+            );
+        break;
+      case "signal":
+        if (S && e.from === "convo") {
+          line("convo", "earlier messages kept");
+          line("user", `“${S.q}”`);
+        } else if (S && e.from === "model") line("model", `→ ${S.q}`);
+        else if (S) line(e.from, S.a);
+        else if (SIGNAL[`${e.from}>${e.to}`])
+          line(e.from === "model" ? e.to : e.from, SIGNAL[`${e.from}>${e.to}`]);
+        break;
+      case "drop": {
+        const b = e.win.find(x => x.id === e.id);
+        if (b?.shielded) line("shield", "that's outside text. Marked as data");
+        break;
+      }
+      case "fresh":
+        if (e.why === "sleep") rule("next day, new session");
+        if (e.why === "stateless") {
+          rule("new message, nothing kept");
+          line("user", `“${S.q}”`);
+        }
+        break;
+      case "say":
+        if (e.part) line(e.part, e.text);
+        break;
+      case "ask":
+        line("perms", "risky. Asked the user first");
+        break;
+      case "miss":
+        line("model", "I've lost that. Reading it again");
+        break;
+      case "skip":
+        line("model", `skipping: ${S?.q ?? "a dull step"}`);
+        break;
+      case "call":
+        if (e.small) line("router", "easy step. Small model");
+        break;
+    }
   }
 
   // The window as it will be before the first turn.
@@ -543,9 +634,11 @@ export function mountHarness(root) {
     say("");
     blocksEl.innerHTML = "";
     setClock(0);
+    clearFeed();
 
     for (const e of res.events) {
       if (id !== state.runId) return;
+      narrate(e);
       switch (e.t) {
         case "start":
           renderWin(e.win, false);
@@ -645,6 +738,13 @@ export function mountHarness(root) {
   async function finish(res) {
     const J = job();
     setMeter(res.tokens);
+    if (res.used.includes("cache"))
+      line("cache", "unchanged cells cost a tenth");
+    line(
+      "model",
+      `“${res.ok ? J.done : FAILS[res.reason].quote}”`,
+      res.ok ? "ah-good" : "ah-bad"
+    );
     if (res.ok) {
       botEl.dataset.face = "happy";
       blip(660, 0.09);
@@ -688,6 +788,7 @@ export function mountHarness(root) {
     runBtn.querySelector("span").textContent = "Run";
     state.at = i;
     blocksEl.innerHTML = "";
+    clearFeed();
     botEl.dataset.face = "idle";
     say("");
     clock = 0;
@@ -791,6 +892,7 @@ export function mountHarness(root) {
     rz = setTimeout(drawWires, 120);
   });
 
+  clearFeed();
   draw();
   ask();
 }
