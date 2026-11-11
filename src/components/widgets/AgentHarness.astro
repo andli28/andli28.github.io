@@ -1,0 +1,1564 @@
+---
+/**
+ * Harness: a plan-then-run puzzle about what the code around a model does.
+ * Meant for a Lab entry with `fullscreen: true`. Progress lives in
+ * localStorage. The board is built by harness/ui.js.
+ *
+ *   import AgentHarness from "@/components/widgets/AgentHarness.astro";
+ *   <AgentHarness />
+ */
+---
+
+<div class="ah">
+  <noscript>This game needs JavaScript.</noscript>
+</div>
+
+<script>
+  import { mountHarness } from "./harness/ui.js";
+  const mountAll = () =>
+    document.querySelectorAll<HTMLElement>(".ah").forEach(mountHarness);
+  document.addEventListener("astro:page-load", mountAll);
+  mountAll();
+</script>
+
+<style is:global>
+  .ah {
+    --ah-bg: #efeeea;
+    --ah-card: #f8f7f4;
+    --ah-ink: #24262b;
+    --ah-mute: #868990;
+    --ah-tile: #ffffff;
+    --ah-edge: #d3d1c9;
+    --ah-line: #e2e0d9;
+    --ah-accent: #4b5bdc;
+    --ah-accent-edge: #3441a8;
+    --ah-on-accent: #ffffff;
+    --ah-red: #df4f3c;
+    --ah-amber: #e3a21c;
+    --ah-green: #2c9a6a;
+    --ah-blue: #3486cf;
+    --ah-task: #f4c430;
+    --ah-g0: #ef476f;
+    --ah-g1: #06a77d;
+    --ah-g2: #118ab2;
+    --ah-g3: #8f5fd7;
+    --ah-g4: #f08c00;
+    --ah-ease: cubic-bezier(0.23, 1, 0.32, 1);
+
+    position: relative;
+    min-height: 100svh;
+    background: var(--ah-bg);
+    color: var(--ah-ink);
+    font-family:
+      ui-rounded,
+      "SF Pro Rounded",
+      "Nunito",
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      sans-serif;
+    font-size: 15px;
+    line-height: 1.4;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    overflow-x: clip;
+  }
+  [data-theme="dark"] .ah {
+    --ah-bg: #15171c;
+    --ah-card: #1b1e25;
+    --ah-ink: #eceef2;
+    --ah-mute: #8b909b;
+    --ah-tile: #272b35;
+    --ah-edge: #0d0f13;
+    --ah-line: #2c313c;
+    --ah-accent: #6c7bff;
+    --ah-accent-edge: #4250c9;
+    --ah-task: #d9aa1e;
+  }
+  .lab-full:has(.ah) .lab-back {
+    color: var(--ah-mute, #868990);
+    position: absolute;
+  }
+  .lab-full:has(.ah) .lab-back:hover {
+    color: #4b5bdc;
+  }
+
+  .ah button {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+  .ah button:disabled {
+    cursor: default;
+  }
+  .ah :focus-visible {
+    outline: 2px solid var(--ah-accent);
+    outline-offset: 2px;
+  }
+  .ah [hidden] {
+    display: none !important;
+  }
+  .ah .ah-i {
+    width: 1.35em;
+    height: 1.35em;
+    flex: none;
+  }
+
+  .ah-wrap {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 52px 16px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  /* ---- level chips ---- */
+  .ah-levels {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    padding: 4px 2px 8px;
+    scrollbar-width: none;
+  }
+  .ah-levels::-webkit-scrollbar {
+    display: none;
+  }
+  .ah-lv {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 9px;
+    border: 1.5px dashed var(--ah-edge) !important;
+    color: var(--ah-mute) !important;
+    font-size: 12px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    transition:
+      transform 120ms var(--ah-ease),
+      background-color 150ms;
+  }
+  .ah-lv.ah-gap {
+    margin-left: 8px;
+  }
+  .ah-lv:disabled {
+    opacity: 0.45;
+  }
+  .ah-lv[data-stars] {
+    border-style: solid !important;
+    background: var(--ah-tile);
+    color: var(--ah-ink) !important;
+  }
+  .ah-lv[data-stars="3"] {
+    border-color: var(--ah-task) !important;
+  }
+  .ah-lv[aria-current="true"] {
+    background: var(--ah-accent);
+    border-color: var(--ah-accent-edge) !important;
+    border-style: solid !important;
+    color: var(--ah-on-accent) !important;
+    box-shadow: 0 3px 0 var(--ah-accent-edge);
+    transform: translateY(-1px);
+  }
+  .ah-lv:not(:disabled):active {
+    transform: scale(0.94);
+  }
+
+  /* ---- header ---- */
+  .ah-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .ah-name {
+    margin: 0;
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    flex: 1;
+    min-width: 0;
+    text-wrap: balance;
+  }
+  .ah-name small {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ah-mute);
+    margin-bottom: 3px;
+  }
+  .ah-stars {
+    display: flex;
+    gap: 2px;
+    color: var(--ah-edge);
+  }
+  .ah-stars .ah-on {
+    color: var(--ah-task);
+  }
+  .ah-stars .ah-i {
+    width: 20px;
+    height: 20px;
+    stroke-width: 0;
+  }
+  .ah-stars.ah-big .ah-i {
+    width: 40px;
+    height: 40px;
+  }
+  .ah-stars .ah-pop.ah-on {
+    animation: ah-pop 420ms var(--ah-ease) both;
+    animation-delay: var(--d, 0ms);
+  }
+  .ah-tools {
+    display: flex;
+    gap: 6px;
+  }
+  .ah-round {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--ah-tile) !important;
+    box-shadow: 0 2px 0 var(--ah-edge);
+    color: var(--ah-mute) !important;
+    transition: transform 120ms var(--ah-ease);
+  }
+  .ah-round:active {
+    transform: translateY(2px);
+    box-shadow: none;
+  }
+  .ah-round[data-count]:not([data-count=""])::after {
+    content: attr(data-count);
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background: var(--ah-accent);
+    color: var(--ah-on-accent);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 16px;
+  }
+
+  /* ---- board ---- */
+  .ah-board {
+    position: relative;
+    background: var(--ah-card);
+    border-radius: 22px;
+    padding: 16px 16px 14px;
+    box-shadow: 0 1px 0 var(--ah-line);
+  }
+  .ah-tip {
+    margin: 0;
+    min-height: 2.8em;
+    padding-right: 64px;
+    color: var(--ah-mute);
+    font-weight: 600;
+    text-wrap: pretty;
+  }
+  .ah-tip.ah-bad {
+    color: var(--ah-red);
+  }
+  .ah-hearts {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    display: flex;
+    gap: 2px;
+    color: var(--ah-red);
+  }
+  .ah-hearts .ah-i {
+    width: 20px;
+    height: 20px;
+    stroke-width: 0;
+    transition:
+      transform 300ms var(--ah-ease),
+      opacity 300ms;
+  }
+  .ah-hearts .ah-gone {
+    opacity: 0.18;
+    transform: scale(0.7);
+  }
+
+  .ah-track {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0 8px;
+    margin-top: 4px;
+  }
+  .ah-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding-top: 46px;
+    width: 56px;
+  }
+  .ah-tile {
+    position: relative;
+    width: 56px;
+    height: 56px;
+    border-radius: 15px;
+    background: var(--ah-tile) !important;
+    box-shadow: 0 4px 0 var(--ah-edge);
+    display: grid;
+    place-items: center;
+    color: var(--ah-ink) !important;
+    transition:
+      transform 140ms var(--ah-ease),
+      box-shadow 140ms var(--ah-ease);
+  }
+  .ah-tile > .ah-i {
+    width: 24px;
+    height: 24px;
+    margin-top: -6px;
+  }
+  .ah-start {
+    background: var(--ah-task) !important;
+    box-shadow: 0 4px 0 color-mix(in srgb, var(--ah-task) 70%, #000);
+    color: #3a2f00 !important;
+  }
+  .ah-flag {
+    background: var(--ah-ink) !important;
+    box-shadow: 0 4px 0 color-mix(in srgb, var(--ah-ink) 60%, #000);
+    color: var(--ah-bg) !important;
+  }
+  .ah-start > .ah-i,
+  .ah-flag > .ah-i,
+  .ah-trap > .ah-i {
+    margin-top: 0;
+  }
+  .ah-trap {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: color-mix(
+      in srgb,
+      var(--ah-red) 14%,
+      var(--ah-tile)
+    ) !important;
+    box-shadow: 0 3px 0 color-mix(in srgb, var(--ah-red) 45%, var(--ah-edge));
+    color: var(--ah-red) !important;
+  }
+  .ah-trapwrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    margin-top: 2px;
+  }
+  .ah-trapwrap::before {
+    content: "";
+    width: 2px;
+    height: 10px;
+    border-left: 2px dotted var(--ah-red);
+  }
+  .ah-danger {
+    background: color-mix(
+      in srgb,
+      var(--ah-red) 16%,
+      var(--ah-tile)
+    ) !important;
+    box-shadow: 0 4px 0 color-mix(in srgb, var(--ah-red) 50%, var(--ah-edge));
+    color: var(--ah-red) !important;
+  }
+  .ah-amber {
+    box-shadow:
+      inset 0 0 0 2.5px var(--ah-amber),
+      0 4px 0 color-mix(in srgb, var(--ah-amber) 60%, var(--ah-edge));
+  }
+  .ah-dull {
+    color: var(--ah-mute) !important;
+  }
+  .ah-spiky {
+    box-shadow:
+      inset 0 0 0 2.5px var(--ah-g3),
+      0 4px 0 color-mix(in srgb, var(--ah-g3) 60%, var(--ah-edge));
+  }
+  .ah-skipped {
+    opacity: 0.4;
+  }
+  .ah-needs {
+    position: absolute;
+    top: 5px;
+    left: 6px;
+    display: flex;
+    gap: 2px;
+  }
+  .ah-marks {
+    position: absolute;
+    top: 3px;
+    right: 6px;
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--ah-red);
+  }
+  .ah-dull .ah-marks {
+    color: var(--ah-mute);
+  }
+  .ah-pips {
+    position: absolute;
+    bottom: 6px;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 2px;
+  }
+  .ah-pip {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--ah-edge);
+  }
+  [data-theme="dark"] .ah-pip {
+    background: #4a505e;
+  }
+  .ah-gem {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ah-g0);
+    flex: none;
+  }
+  .ah-g1 {
+    background: var(--ah-g1);
+  }
+  .ah-g2 {
+    background: var(--ah-g2);
+  }
+  .ah-g3 {
+    background: var(--ah-g3);
+  }
+  .ah-g4 {
+    background: var(--ah-g4);
+  }
+  .ah-gem.ah-exact {
+    border-radius: 1.5px;
+    transform: rotate(45deg) scale(0.9);
+  }
+  .ah-gem.ah-need {
+    width: 7px;
+    height: 7px;
+    background: transparent;
+    box-shadow: inset 0 0 0 2px var(--ah-g0);
+  }
+  .ah-need.ah-g1 {
+    box-shadow: inset 0 0 0 2px var(--ah-g1);
+  }
+  .ah-need.ah-g2 {
+    box-shadow: inset 0 0 0 2px var(--ah-g2);
+  }
+  .ah-need.ah-g3 {
+    box-shadow: inset 0 0 0 2px var(--ah-g3);
+  }
+  .ah-need.ah-g4 {
+    box-shadow: inset 0 0 0 2px var(--ah-g4);
+  }
+  .ah-gem.ah-float {
+    position: absolute;
+    right: 7px;
+    bottom: 14px;
+  }
+
+  .ah-slot {
+    min-height: 30px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 3px;
+  }
+
+  /* sockets light up while a chip is in hand */
+  .ah-arming [data-sock]:not(.ah-can) {
+    opacity: 0.45;
+  }
+  .ah-can {
+    animation: ah-breathe 1.1s ease-in-out infinite;
+  }
+  .ah-can.ah-tile,
+  .ah-hinted.ah-tile,
+  .ah-pick.ah-tile {
+    outline: 2.5px solid var(--ah-accent);
+    outline-offset: 2px;
+  }
+  .ah-hinted {
+    outline: 2.5px solid var(--ah-accent) !important;
+    outline-offset: 2px;
+    animation: ah-breathe 0.9s ease-in-out infinite;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .ah-can:hover {
+      transform: translateY(-2px);
+    }
+    .ah-round:hover {
+      color: var(--ah-ink) !important;
+    }
+  }
+  .ah-shake {
+    animation: ah-shake 380ms ease-in-out;
+  }
+
+  /* ---- the bot ---- */
+  .ah-bot {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 0;
+    height: 0;
+    z-index: 3;
+    pointer-events: none;
+    transition: transform 300ms cubic-bezier(0.3, 0.7, 0.3, 1);
+    will-change: transform;
+  }
+  .ah-bot.ah-snap {
+    transition: none;
+  }
+  .ah-body {
+    position: absolute;
+    left: -17px;
+    top: -38px;
+    width: 34px;
+    height: 32px;
+    border-radius: 13px 13px 11px 11px;
+    background: var(--ah-accent);
+    box-shadow: inset 0 -4px 0 var(--ah-accent-edge);
+    display: grid;
+    place-items: center;
+    transform-origin: 50% 100%;
+  }
+  .ah-ant {
+    position: absolute;
+    left: -1px;
+    top: -45px;
+    width: 2px;
+    height: 8px;
+    background: var(--ah-accent-edge);
+    transform-origin: 50% 100%;
+  }
+  .ah-ant::after {
+    content: "";
+    position: absolute;
+    left: -2px;
+    top: -5px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ah-task);
+  }
+  .ah-hop .ah-body,
+  .ah-hop .ah-ant {
+    animation: ah-hop 300ms cubic-bezier(0.3, 0.7, 0.3, 1);
+  }
+  .ah-visor {
+    width: 24px;
+    height: 12px;
+    margin-top: -3px;
+    border-radius: 6px;
+    background: #14161c;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+  }
+  .ah-visor i {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 160ms var(--ah-ease);
+  }
+  .ah-bot[data-face="think"] .ah-visor i {
+    transform: translateY(-2px);
+  }
+  .ah-bot[data-face="confused"] .ah-visor i:first-child {
+    transform: scale(1.6);
+  }
+  .ah-bot[data-face="confused"] .ah-body {
+    rotate: -8deg;
+  }
+  .ah-bot[data-face="alarm"] .ah-visor i {
+    transform: scale(1.5);
+    background: #ff8a7a;
+  }
+  .ah-bot[data-face="happy"] .ah-visor i {
+    height: 2px;
+    border-radius: 2px;
+    transform: scaleX(1.5);
+  }
+  .ah-bot[data-face="happy"] .ah-body {
+    animation: ah-bounce 600ms var(--ah-ease) 2;
+  }
+  .ah-bot[data-face="sad"] .ah-visor i,
+  .ah-bot[data-face="dizzy"] .ah-visor i {
+    height: 2px;
+    transform: rotate(45deg) scaleX(1.6);
+  }
+  .ah-bot[data-face="dizzy"] .ah-body {
+    animation: ah-wobble 900ms ease-in-out infinite;
+  }
+  .ah-bot[data-face="sad"] .ah-body {
+    rotate: 6deg;
+  }
+  .ah-bubble {
+    position: absolute;
+    left: 0;
+    top: -72px;
+    transform: translateX(-50%) translateY(4px);
+    white-space: nowrap;
+    padding: 3px 9px;
+    border-radius: 10px;
+    background: var(--ah-ink);
+    color: var(--ah-bg);
+    font-size: 12px;
+    font-weight: 700;
+    opacity: 0;
+  }
+  .ah-bubble.ah-show {
+    animation: ah-bubble 1100ms var(--ah-ease) both;
+  }
+
+  /* ---- harness rack ---- */
+  .ah-rack {
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    min-height: 54px;
+    margin-top: 12px;
+    padding: 7px 8px !important;
+    border-radius: 16px;
+    border: 1.5px dashed var(--ah-edge) !important;
+    text-align: left;
+    cursor: default !important;
+  }
+  .ah-rack.ah-can {
+    border-color: var(--ah-accent) !important;
+    cursor: pointer !important;
+  }
+  .ah-racklabel {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ah-mute);
+    padding: 0 4px;
+  }
+
+  /* ---- chips ---- */
+  .ah-chip {
+    --c: var(--ah-ink);
+    position: relative;
+    display: inline-flex !important;
+    align-items: center;
+    gap: 5px;
+    height: 38px;
+    min-width: 38px;
+    padding: 0 9px !important;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--c) 12%, var(--ah-tile)) !important;
+    box-shadow: 0 3px 0 color-mix(in srgb, var(--c) 35%, var(--ah-edge));
+    color: var(--c) !important;
+    font-weight: 700;
+    font-size: 13px;
+    transition:
+      transform 120ms var(--ah-ease),
+      box-shadow 120ms var(--ah-ease),
+      opacity 150ms;
+    touch-action: none;
+  }
+  .ah-chip.ah-tool {
+    --c: var(--ah-mute);
+    color: var(--ah-ink) !important;
+  }
+  .ah-chip.ah-safe {
+    --c: var(--ah-red);
+  }
+  .ah-chip.ah-ctx {
+    --c: var(--ah-blue);
+  }
+  .ah-chip.ah-scale {
+    --c: var(--ah-green);
+  }
+  .ah-chip.ah-core {
+    --c: var(--ah-accent);
+  }
+  .ah-chip em {
+    font-style: normal;
+    font-size: 11px;
+  }
+  .ah-chip:not(:disabled):active {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 color-mix(in srgb, var(--c) 35%, var(--ah-edge));
+  }
+  .ah-chip:disabled {
+    opacity: 0.35;
+  }
+  .ah-chip.ah-lock {
+    box-shadow: none;
+    background: transparent !important;
+    opacity: 0.75;
+    cursor: default;
+  }
+  .ah-rack .ah-chip.ah-lock {
+    padding: 0 4px !important;
+    min-width: 28px;
+  }
+  .ah-chip.ah-mini {
+    height: 26px;
+    min-width: 26px;
+    padding: 0 4px !important;
+    border-radius: 8px;
+    font-size: 11px;
+    gap: 2px;
+    box-shadow: 0 2px 0 color-mix(in srgb, var(--c) 35%, var(--ah-edge));
+  }
+  .ah-chip.ah-mini em {
+    font-size: 9px;
+    letter-spacing: -0.02em;
+  }
+  .ah-chip.ah-mini .ah-i {
+    width: 15px;
+    height: 15px;
+  }
+  .ah-chip.ah-lifted {
+    opacity: 0.3;
+  }
+  .ah-chip.ah-ghost {
+    position: fixed;
+    left: -19px;
+    top: -19px;
+    z-index: 50;
+    pointer-events: none;
+    scale: 1.12;
+    box-shadow: 0 8px 18px rgb(0 0 0 / 0.18);
+    transition: none;
+  }
+  .ah-chip.ah-armed {
+    outline: 2.5px solid var(--ah-accent);
+    outline-offset: 2px;
+    transform: translateY(-2px);
+  }
+  .ah-chip.ah-dropin {
+    animation: ah-dropin 420ms var(--ah-ease) both;
+  }
+
+  .ah-tray {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+  }
+  .ah-traychip em {
+    display: none;
+  }
+  .ah-traychip u {
+    text-decoration: none;
+    font-size: 11px;
+    min-width: 16px;
+    height: 16px;
+    line-height: 16px;
+    border-radius: 8px;
+    background: var(--c);
+    color: var(--ah-tile);
+    text-align: center;
+  }
+  .ah-slots {
+    margin-left: auto;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ah-mute);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- window ---- */
+  .ah-winhead {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 14px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ah-mute);
+    font-variant-numeric: tabular-nums;
+  }
+  .ah-winhead .ah-bad {
+    color: var(--ah-red);
+  }
+  .ah-win {
+    position: relative;
+    height: 40px;
+    margin-top: 5px;
+  }
+  .ah-cells {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: repeat(var(--n), 1fr);
+    gap: 2px;
+  }
+  .ah-cell {
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--ah-edge) 38%, transparent) !important;
+    display: grid !important;
+    place-items: center;
+    cursor: default !important;
+    color: var(--ah-blue) !important;
+  }
+  .ah-cell.ah-can {
+    background: color-mix(
+      in srgb,
+      var(--ah-accent) 22%,
+      transparent
+    ) !important;
+    cursor: pointer !important;
+  }
+  .ah-cell.ah-compact-here {
+    z-index: 2;
+    cursor: pointer !important;
+    box-shadow: inset 0 0 0 2px var(--ah-blue);
+    background: color-mix(
+      in srgb,
+      var(--ah-blue) 16%,
+      var(--ah-card)
+    ) !important;
+    overflow: visible;
+  }
+  .ah-cell.ah-compact-here .ah-i {
+    width: 14px;
+    height: 14px;
+    position: absolute;
+    top: -16px;
+  }
+  .ah-blocks {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .ah-block {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc(var(--x) / var(--n) * 100%);
+    width: calc(var(--w) / var(--n) * 100% - 2px);
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--ah-blue) 26%, var(--ah-tile));
+    display: grid;
+    place-items: center;
+    color: color-mix(in srgb, var(--ah-ink) 55%, transparent);
+    transition:
+      left 260ms var(--ah-ease),
+      width 260ms var(--ah-ease);
+    overflow: hidden;
+  }
+  .ah-block .ah-i {
+    width: 14px;
+    height: 14px;
+  }
+  .ah-block.ah-in {
+    animation: ah-blockin 300ms var(--ah-ease) both;
+  }
+  .ah-k-def {
+    background: color-mix(in srgb, var(--ah-mute) 28%, var(--ah-tile));
+  }
+  .ah-k-def.ah-lazy {
+    background: repeating-linear-gradient(
+      -45deg,
+      color-mix(in srgb, var(--ah-mute) 30%, var(--ah-tile)) 0 5px,
+      color-mix(in srgb, var(--ah-mute) 14%, var(--ah-tile)) 5px 10px
+    );
+  }
+  .ah-k-task {
+    background: var(--ah-task);
+    color: #3a2f00;
+  }
+  .ah-k-todo {
+    background: color-mix(in srgb, var(--ah-task) 35%, var(--ah-tile));
+    box-shadow: inset 0 0 0 2px var(--ah-task);
+  }
+  .ah-k-notes {
+    background: color-mix(in srgb, var(--ah-green) 30%, var(--ah-tile));
+  }
+  .ah-k-summary {
+    background: repeating-linear-gradient(
+      -45deg,
+      color-mix(in srgb, var(--ah-g3) 34%, var(--ah-tile)) 0 5px,
+      color-mix(in srgb, var(--ah-g3) 18%, var(--ah-tile)) 5px 10px
+    );
+  }
+  .ah-k-err,
+  .ah-k-test.ah-red {
+    background: color-mix(in srgb, var(--ah-red) 30%, var(--ah-tile));
+    color: var(--ah-red);
+  }
+  .ah-k-test {
+    background: color-mix(in srgb, var(--ah-green) 30%, var(--ah-tile));
+    color: var(--ah-green);
+  }
+  .ah-errmark {
+    font-size: 11px;
+    font-weight: 800;
+  }
+  .ah-spiked {
+    background: color-mix(in srgb, var(--ah-g3) 40%, var(--ah-tile));
+    box-shadow: inset 0 0 0 2px var(--ah-g3);
+  }
+  .ah-shielded {
+    box-shadow:
+      inset 0 0 0 2px var(--ah-card),
+      inset 0 0 0 4px var(--ah-red);
+  }
+  .ah-pinned {
+    box-shadow: inset 0 -3px 0 var(--ah-blue);
+  }
+  .ah-pinmark {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    width: 10px !important;
+    height: 10px !important;
+    color: var(--ah-blue);
+  }
+  .ah-over {
+    background: var(--ah-red) !important;
+  }
+  .ah-gems {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 2px;
+    padding: 0 5px 5px;
+  }
+  .ah-gems .ah-at-head {
+    margin-right: auto;
+  }
+  .ah-gems .ah-at-tail {
+    margin-left: auto;
+  }
+  .ah-win.ah-scan::after {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: 10px;
+    box-shadow: 0 0 0 2px var(--ah-accent);
+    animation: ah-scan 380ms ease-out both;
+    pointer-events: none;
+  }
+
+  /* ---- meter ---- */
+  .ah-meter {
+    position: relative;
+    margin-top: 14px;
+  }
+  .ah-bar {
+    position: relative;
+    height: 6px;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--ah-edge) 45%, transparent);
+  }
+  .ah-fillbar {
+    position: absolute;
+    inset: 0;
+    border-radius: 3px;
+    background: var(--ah-green);
+    transform: scaleX(0);
+    transform-origin: 0 50%;
+    transition:
+      transform 260ms var(--ah-ease),
+      background-color 200ms;
+  }
+  .ah-overpar .ah-fillbar {
+    background: var(--ah-amber);
+  }
+  .ah-partick {
+    position: absolute;
+    left: 66.67%;
+    top: -3px;
+    width: 2px;
+    height: 12px;
+    border-radius: 1px;
+    background: var(--ah-ink);
+  }
+  .ah-nums {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ah-mute);
+    font-variant-numeric: tabular-nums;
+  }
+  .ah-tok {
+    position: relative;
+  }
+  .ah-plus {
+    position: absolute;
+    left: calc(100% + 8px);
+    top: 0;
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--ah-ink);
+    animation: ah-plus 900ms var(--ah-ease) both;
+    pointer-events: none;
+  }
+  .ah-plus.ah-cached,
+  .ah-plus.ah-small {
+    color: var(--ah-green);
+  }
+
+  /* ---- buttons ---- */
+  .ah-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.6fr;
+    gap: 8px;
+  }
+  .ah-btn {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    height: 48px;
+    border-radius: 24px;
+    background: var(--ah-tile) !important;
+    box-shadow: 0 4px 0 var(--ah-edge);
+    font-weight: 800;
+    transition:
+      transform 120ms var(--ah-ease),
+      box-shadow 120ms var(--ah-ease),
+      opacity 150ms;
+  }
+  .ah-btn:not(:disabled):active {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 var(--ah-edge);
+  }
+  .ah-btn:disabled {
+    opacity: 0.4;
+  }
+  .ah-btn.ah-run {
+    background: var(--ah-accent) !important;
+    color: var(--ah-on-accent) !important;
+    box-shadow: 0 4px 0 var(--ah-accent-edge);
+  }
+  .ah-btn.ah-run:not(:disabled):active {
+    box-shadow: 0 1px 0 var(--ah-accent-edge);
+  }
+
+  /* ---- overlays ---- */
+  .ah-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: rgb(20 22 28 / 0.45);
+    animation: ah-fade 180ms ease-out both;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .ah-sheet {
+    position: relative;
+    width: min(560px, 100%);
+    max-height: min(86svh, 760px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--ah-card);
+    border-radius: 24px;
+    padding: 22px 20px 20px;
+    animation: ah-rise 260ms var(--ah-ease) both;
+  }
+  .ah-close {
+    position: absolute !important;
+    top: 14px;
+    right: 14px;
+  }
+  .ah-sheettitle {
+    margin: 0 0 4px;
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+  .ah-sub {
+    margin: 0 0 14px;
+    color: var(--ah-mute);
+    font-weight: 600;
+  }
+  .ah-clear {
+    text-align: center;
+  }
+  .ah-kicker {
+    margin: 0 0 8px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ah-mute);
+  }
+  .ah-clear .ah-stars {
+    justify-content: center;
+  }
+  .ah-why {
+    margin: 6px 0 14px;
+    color: var(--ah-mute);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .ah-clear .ah-actions {
+    grid-template-columns: 1fr 1.6fr;
+    margin-top: 16px;
+  }
+  .ah-notes {
+    display: grid;
+    gap: 10px;
+  }
+  .ah-note {
+    text-align: left;
+    background: var(--ah-tile);
+    border-radius: 16px;
+    padding: 14px;
+  }
+  .ah-note header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--ah-accent);
+  }
+  .ah-note header .ah-i {
+    width: 26px;
+    height: 26px;
+  }
+  .ah-note small {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--ah-mute);
+  }
+  .ah-note h4 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--ah-ink);
+  }
+  .ah-note p {
+    margin: 8px 0 0;
+    text-wrap: pretty;
+  }
+  .ah-note .ah-wild {
+    color: var(--ah-mute);
+    font-size: 13.5px;
+  }
+  .ah-note .ah-wild b {
+    display: block;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .ah-note.ah-locked {
+    opacity: 0.5;
+  }
+  .ah-note.ah-locked header {
+    color: var(--ah-mute);
+  }
+
+  /* ---- drill ---- */
+  .ah-drill {
+    display: grid;
+    gap: 12px;
+  }
+  .ah-drillbar {
+    height: 6px;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--ah-edge) 45%, transparent);
+    overflow: hidden;
+  }
+  .ah-drillbar span {
+    display: block;
+    height: 100%;
+    background: var(--ah-accent);
+    transform-origin: 0 50%;
+    transition: transform 100ms linear;
+  }
+  .ah-drillcard {
+    min-height: 96px;
+    display: grid;
+    place-items: center;
+    padding: 12px;
+    border-radius: 16px;
+    background: var(--ah-tile);
+    box-shadow: 0 4px 0 var(--ah-edge);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 17px;
+    font-weight: 600;
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+  .ah-drillcard.ah-in {
+    animation: ah-dropin 220ms var(--ah-ease) both;
+  }
+  .ah-drillwhy {
+    margin: 0;
+    min-height: 2.8em;
+    color: var(--ah-mute);
+    font-weight: 600;
+  }
+  .ah-drillwhy.ah-bad {
+    color: var(--ah-red);
+  }
+  .ah-actions.ah-three {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  /* ---- live bench ---- */
+  .ah-engine {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--ah-edge) 40%, transparent);
+  }
+  .ah-seg {
+    height: 38px;
+    border-radius: 12px;
+    font-weight: 700;
+    color: var(--ah-mute) !important;
+  }
+  .ah-seg[aria-pressed="true"] {
+    background: var(--ah-tile) !important;
+    color: var(--ah-ink) !important;
+    box-shadow: 0 2px 0 var(--ah-edge);
+  }
+  .ah-enginenote {
+    margin: 8px 2px 14px;
+    min-height: 2.8em;
+    font-size: 13.5px;
+    color: var(--ah-mute);
+  }
+  .ah-switches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .ah-switch {
+    touch-action: manipulation;
+  }
+  .ah-switch[aria-pressed="false"] {
+    --c: var(--ah-mute);
+    background: transparent !important;
+    box-shadow: inset 0 0 0 1.5px var(--ah-edge);
+    color: var(--ah-mute) !important;
+  }
+  .ah-lanes {
+    display: grid;
+    gap: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+  .ah-lane {
+    display: grid;
+    grid-template-columns: 52px repeat(7, 1fr) 34px 58px 40px;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .ah-lane > span {
+    text-align: right;
+  }
+  .ah-lanehead {
+    font-size: 9px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ah-mute);
+    align-items: end;
+  }
+  .ah-lanehead > span:not(:nth-last-child(-n + 3)) {
+    text-align: center;
+    line-height: 1.1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ah-lane i {
+    height: 30px;
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--ah-edge) 40%, transparent);
+    transition: background-color 200ms;
+  }
+  .ah-lane i.ah-live {
+    background: color-mix(in srgb, var(--ah-accent) 35%, transparent);
+    animation: ah-pulse 700ms ease-in-out infinite alternate;
+  }
+  .ah-lane i.ah-pass {
+    background: var(--ah-green);
+  }
+  .ah-lane i.ah-nope {
+    background: color-mix(in srgb, var(--ah-red) 75%, var(--ah-tile));
+  }
+  .ah-benchnow {
+    margin: 12px 2px;
+    min-height: 2.8em;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ah-mute);
+    overflow-wrap: anywhere;
+  }
+  .ah-benchgo {
+    width: 100%;
+  }
+  .ah-transcripts h4 {
+    margin: 18px 0 8px;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ah-mute);
+  }
+  .ah-transcripts details {
+    background: var(--ah-tile);
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+  }
+  .ah-transcripts summary {
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .ah-transcripts details > div {
+    margin-top: 10px;
+    font-size: 12.5px;
+  }
+  .ah-transcripts p {
+    margin: 4px 0;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11.5px;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+  .ah-transcripts em {
+    display: inline-block;
+    min-width: 58px;
+    font-style: normal;
+    font-weight: 700;
+    color: var(--ah-mute);
+  }
+  .ah-transcripts .ah-l-model em {
+    color: var(--ah-accent);
+  }
+  .ah-transcripts .ah-l-fail {
+    color: var(--ah-red);
+  }
+  .ah-transcripts .ah-l-pass {
+    color: var(--ah-green);
+  }
+  @keyframes ah-pulse {
+    to {
+      opacity: 0.4;
+    }
+  }
+
+  /* ---- motion ---- */
+  @keyframes ah-hop {
+    0% {
+      transform: translateY(0) scale(1, 1);
+    }
+    35% {
+      transform: translateY(-16px) scale(0.92, 1.1);
+    }
+    80% {
+      transform: translateY(0) scale(1.1, 0.88);
+    }
+    100% {
+      transform: translateY(0) scale(1, 1);
+    }
+  }
+  @keyframes ah-bounce {
+    50% {
+      transform: translateY(-9px) scale(0.95, 1.06);
+    }
+  }
+  @keyframes ah-wobble {
+    25% {
+      rotate: -10deg;
+    }
+    75% {
+      rotate: 10deg;
+    }
+  }
+  @keyframes ah-bubble {
+    0% {
+      opacity: 0;
+      transform: translateX(-50%) translateY(4px) scale(0.9);
+    }
+    15%,
+    75% {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translateX(-50%) translateY(-4px) scale(1);
+    }
+  }
+  @keyframes ah-blockin {
+    from {
+      opacity: 0;
+      transform: translateY(-14px) scale(0.92);
+    }
+  }
+  @keyframes ah-dropin {
+    from {
+      opacity: 0;
+      transform: translateY(-18px) scale(0.9);
+    }
+  }
+  @keyframes ah-scan {
+    from {
+      opacity: 0.9;
+    }
+    to {
+      opacity: 0;
+      transform: scale(1.015, 1.2);
+    }
+  }
+  @keyframes ah-plus {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    25% {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+  }
+  @keyframes ah-pop {
+    from {
+      transform: scale(0.3);
+      opacity: 0;
+    }
+    60% {
+      transform: scale(1.2);
+    }
+  }
+  @keyframes ah-breathe {
+    50% {
+      outline-offset: 4px;
+    }
+  }
+  @keyframes ah-shake {
+    20%,
+    60% {
+      transform: translateX(-4px);
+    }
+    40%,
+    80% {
+      transform: translateX(4px);
+    }
+  }
+  @keyframes ah-fade {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes ah-rise {
+    from {
+      opacity: 0;
+      transform: translateY(14px) scale(0.98);
+    }
+  }
+
+  @media (max-width: 480px) {
+    .ah-wrap {
+      padding-top: 46px;
+      gap: 12px;
+    }
+    .ah-name {
+      font-size: 22px;
+    }
+    .ah-board {
+      padding: 14px 12px 12px;
+      border-radius: 18px;
+    }
+    .ah-track {
+      gap: 0 4px;
+    }
+    .ah-col {
+      width: 42px;
+    }
+    .ah-tile {
+      width: 42px;
+      height: 46px;
+      border-radius: 12px;
+    }
+    .ah-tile > .ah-i {
+      width: 20px;
+      height: 20px;
+    }
+    .ah-needs {
+      top: 4px;
+      left: 4px;
+    }
+    .ah-gem.ah-need {
+      width: 6px;
+      height: 6px;
+    }
+    .ah-pips {
+      gap: 1px;
+    }
+    .ah-trap {
+      width: 40px;
+      height: 40px;
+    }
+    .ah-traychip b {
+      font-size: 12px;
+    }
+    .ah-round {
+      width: 34px;
+      height: 34px;
+    }
+    .ah-overlay {
+      place-items: end center;
+      padding: 0;
+    }
+    .ah-sheet {
+      border-radius: 24px 24px 0 0;
+      padding-bottom: calc(20px + env(safe-area-inset-bottom));
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ah *,
+    .ah *::after {
+      animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important;
+    }
+    .ah-bot {
+      transition-duration: 120ms;
+    }
+    .ah-bubble.ah-show {
+      animation: none !important;
+      opacity: 1;
+    }
+  }
+</style>
