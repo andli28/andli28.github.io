@@ -280,6 +280,7 @@ export async function runJob(job, h, model, onStep = () => {}) {
   let turns = 0;
   let nudged = false;
   let toolCalls = 0;
+  let lastCall = "";
   let summary = "";
   const cap = h.loop ? (h.stop ? 12 : 20) : 1;
   const size = () => msgs.reduce((n, m) => n + est(m.content) + 4, 0);
@@ -375,6 +376,16 @@ export async function runJob(job, h, model, onStep = () => {}) {
 
     // a tool call
     const { tool, args } = r.call;
+    // Stop guard: the same call twice in a row gets a nudge, not a rerun.
+    const sig = JSON.stringify([tool, args]);
+    if (h.stop && sig === lastCall) {
+      const fb =
+        "You already made that exact call and have its result above. Do not call it again. Reply with: ANSWER: <your answer>";
+      msgs.push({ role: "user", content: fb });
+      note("harness", fb);
+      continue;
+    }
+    lastCall = sig;
     toolCalls++;
     let out;
     let err = false;
@@ -402,7 +413,10 @@ export async function runJob(job, h, model, onStep = () => {}) {
     if (!err && h.shield && TOOLS[tool]?.untrusted)
       out = `<untrusted>\n${out}\n</untrusted>`;
     const fb = `TOOL RESULT${err ? " (error)" : ""}: ${out}`;
-    msgs.push({ role: "user", content: fb });
+    msgs.push({
+      role: "user",
+      content: `${fb}\n(If that is enough, reply with ANSWER: <your answer>. Otherwise call another tool.)`,
+    });
     note(
       "harness",
       fb.length > 420 ? `${fb.slice(0, 200)} … ${fb.slice(-160)}` : fb
