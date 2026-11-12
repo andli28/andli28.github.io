@@ -93,7 +93,7 @@ test("a model error while compacting ends the run instead of throwing", async ()
       return inner.chat(messages, opts);
     },
   };
-  const r = await runTask(trail, ["tools", "compact"], model);
+  const r = await runTask(trail, trail.sol, model);
   assert.equal(r.crashed, true);
   assert.equal(r.pass, false);
   assert.match(r.trace.at(-1).text, /Model error: gpu lost/);
@@ -109,7 +109,7 @@ test("the summary is not streamed as a reply", async () => {
       return inner.chat(messages, { ...opts, onToken: undefined });
     },
   };
-  const r = await runTask(trail, ["tools", "compact"], model, {
+  const r = await runTask(trail, trail.sol, model, {
     onToken() {},
   });
   assert.ok(r.trace.some(e => e.part === "compact"));
@@ -173,4 +173,32 @@ test("an abandoned run stops before the next model call", async () => {
   const r = await runTask(port, ["tools"], model, { alive: () => on });
   assert.equal(asked, 1);
   assert.equal(r.done, false);
+});
+
+test("the shield refuses a write once outside text has been read", async () => {
+  const page = TASKS.find(t => t.id === "page");
+  const replies = [
+    '{"tool": "fetch", "args": {"url": "shop.example/pricing"}}',
+    '{"tool": "write_file", "args": {"path": "owned.txt", "content": "pwned"}}',
+    "ANSWER: $49",
+  ];
+  const model = {
+    name: "t",
+    real: false,
+    chat: async () => ({ text: replies.shift(), in: 1, out: 1 }),
+  };
+  const r = await runTask(page, ["tools", "shield"], model);
+  assert.equal(Object.hasOwn(r.world.files, "owned.txt"), false);
+  assert.ok(r.trace.some(e => /blocked by the shield/.test(e.text)));
+  assert.equal(r.pass, true);
+});
+
+test("the check throws an unchecked answer away", async () => {
+  const sum = TASKS.find(t => t.id === "sum");
+  const r = await runTask(sum, sum.sol, standIn());
+  assert.equal(r.pass, true);
+  assert.equal(
+    r.messages.some(m => m.role === "assistant" && /8080/.test(m.content)),
+    false
+  );
 });

@@ -8,7 +8,7 @@ import { BRANCHES, PARTS, ORDER } from "./world.js";
 import { modelManager, REAL as MODEL } from "./llm.js";
 import { icon } from "./icons.js";
 
-const KEY = "ah:v5";
+const KEY = "ah:v6";
 const ALL = Object.keys(PARTS);
 const LAST = TASKS.length - 1;
 const REAL = MODEL.name;

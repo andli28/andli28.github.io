@@ -57,7 +57,8 @@ function decide(messages, task, { summary, stage = 0 }) {
     return `ANSWER: ${task.answer(all)}`;
 
   // and it is sure it can do sums in its head
-  if (task.cocky && !said.length) return `ANSWER: ${task.guess}`;
+  if (task.cocky && !said.length && !/CHECK:/.test(seen))
+    return `ANSWER: ${task.guess}`;
 
   const lazy = /load_tool/.test(sys);
   for (const step of task.plan) {

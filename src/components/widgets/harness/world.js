@@ -66,7 +66,7 @@ export const PARTS = {
     "verify",
     "Check",
     "No answering without looking first.",
-    "If the model answers without having used a tool, the harness sends it back to verify before the answer is accepted.",
+    "If the model answers without having used a tool, the harness throws that answer away and sends the model back to look first.",
     "Self-verification. Without it agents declare success on work they never checked."
   ),
   trim: p(
@@ -80,15 +80,15 @@ export const PARTS = {
     "context",
     "Compaction",
     "Fold old steps into a summary.",
-    "When the conversation passes 60% of the limit, the model is asked to summarise the older steps. The summary replaces them; the task stays word for word.",
+    "When the conversation passes 60% of the limit, the model is asked to summarise everything but the latest step. The summary replaces the older messages; the current request stays word for word.",
     "Context compaction, the usual answer to context rot."
   ),
   shield: p(
     "guard",
     "Shield",
-    "Mark outside text as data, not orders.",
-    "Anything fetched from outside is wrapped in a tag, and the instructions say never to obey what is inside it.",
-    "Prompt-injection defences."
+    "Mark outside text as data, and block writes after it.",
+    "Anything fetched from outside is wrapped in a tag, and the instructions say never to obey what is inside it. A small model may obey anyway, so once outside text has been read the harness also refuses tools that write.",
+    "Prompt-injection defences: marking untrusted text, and cutting off risky tools once it is in the context."
   ),
   perms: p(
     "guard",
@@ -108,7 +108,7 @@ export const PARTS = {
     "control",
     "Stop guard",
     "Catch it repeating itself.",
-    "If the model makes the same call twice in a row, the harness doesn't run it again. It tells the model to answer with what it has.",
+    "If the model makes the same call twice in a row, the harness doesn't run it again. It tells the model to try something else, or to answer with what it has.",
     "Loop detection and turn limits."
   ),
   skills: p(
