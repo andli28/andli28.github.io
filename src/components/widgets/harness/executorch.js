@@ -6,7 +6,8 @@ import { REAL } from "./llm.js";
 
 /**
  * Start the worker, load the model and return a model adapter:
- *   { name, real, chat(messages, { max, onToken }) → { text, in, out } }
+ *   { name, real, chat(messages, { max, onToken, signal }) → { text, in, out } }
+ * Aborting `signal` stops that reply in the worker; the chat then rejects.
  * onProgress({ stage, loaded, total }) reports the load. `stage` is
  * "download", "cache" (everything was already in the browser) or "gpu".
  * onDead(message) is called if the worker stops after it had loaded.
@@ -39,11 +40,18 @@ export function executorch(onProgress = () => {}, onDead = () => {}) {
         resolve({
           name: REAL.name,
           real: true,
-          chat(messages, { max, onToken } = {}) {
+          chat(messages, { max, onToken, signal } = {}) {
             return new Promise((res, rej) => {
               if (dead) return rej(dead);
+              if (signal?.aborted) return rej(new Error("cancelled"));
               const id = ++n;
               waiting.set(id, { resolve: res, reject: rej, onToken });
+              signal?.addEventListener(
+                "abort",
+                () =>
+                  waiting.has(id) && worker.postMessage({ type: "cancel", id }),
+                { once: true }
+              );
               worker.postMessage({
                 type: "chat",
                 id,

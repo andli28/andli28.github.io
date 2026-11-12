@@ -585,6 +585,10 @@ export function mountHarness(root) {
     const parts = [...wired()];
     const model = models.current();
     const alive = () => id === state.runId;
+    // leaving the task aborts this; a reply being generated is cut short
+    const ctl = new AbortController();
+    state.ctl = ctl;
+    let ask = null; // this run's pending Allow/Deny, if any
     state.running = true;
     state.fast = false;
     root.classList.add("ah-running");
@@ -624,6 +628,7 @@ export function mountHarness(root) {
     try {
       res = await runTask(T, parts, model, {
         alive,
+        signal: ctl.signal,
         onToken(text) {
           if (!alive()) return;
           botEl.dataset.face = "think";
@@ -698,7 +703,8 @@ export function mountHarness(root) {
             panes.now.append(row);
             panes.now.scrollTop = panes.now.scrollHeight;
             // leaving the task answers for the player: no
-            state.unask = () => resolve(false);
+            ask = () => resolve(false);
+            state.unask = ask;
           });
         },
       });
@@ -706,7 +712,8 @@ export function mountHarness(root) {
       if (alive()) line("end", "Run", `The run stopped: ${e.message || e}`);
     } finally {
       // whatever happened, the board is usable again
-      state.unask = null;
+      // a later run may have a question of its own waiting: leave that one
+      if (state.unask === ask) state.unask = null;
       if (alive()) {
         state.running = false;
         root.classList.remove("ah-running");
@@ -757,6 +764,7 @@ export function mountHarness(root) {
     if (i < 0 || i > state.top) return;
     // abandon the run in progress, and any question it was waiting on
     state.runId++;
+    state.ctl?.abort();
     state.unask?.();
     state.running = false;
     root.classList.remove("ah-running");

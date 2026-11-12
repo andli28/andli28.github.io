@@ -585,7 +585,8 @@ const RETRY =
  *   parts   the ids of the connected parts
  *   model   { chat(messages, opts) → { text, in, out } }
  *   io      { onStep(entry), onToken(textSoFar), askUser({tool, args}) → bool,
- *             alive() → false once the run has been abandoned }
+ *             alive() → false once the run has been abandoned,
+ *             signal: an AbortSignal that cuts a reply in progress short }
  * Returns the trace, the facts the evals read, and the graded evals.
  */
 export async function runTask(task, parts, model, io = {}) {
@@ -596,6 +597,7 @@ export async function runTask(task, parts, model, io = {}) {
     onContext = () => {},
     askUser = async () => true,
     alive = () => true,
+    signal,
   } = io;
   const world = makeWorld();
   const box = toolbox(task);
@@ -627,6 +629,7 @@ export async function runTask(task, parts, model, io = {}) {
     // a summary is the harness's own business: it isn't streamed as a reply
     const out = await model.chat(messages, {
       task,
+      signal,
       onToken: opts.summary ? undefined : onToken,
       ...opts,
     });

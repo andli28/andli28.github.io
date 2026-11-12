@@ -15,6 +15,7 @@
 // token, and the loop that feeds it runs here.
 //
 // Messages in:  { type: "load" } · { type: "chat", id, messages, max }
+//               { type: "cancel", id }   (that chat then ends in an error)
 // Messages out: { type: "progress", stage, loaded, total } · { type: "ready" }
 //               { type: "token", id, text } · { type: "result", id, text, in, out }
 //               { type: "error", id?, message }
@@ -199,7 +200,9 @@ class ChatLoop {
     return ids;
   }
 
-  async generate(messages, { max = 160, onToken } = {}) {
+  // `stopped()` is asked between steps; when it says yes the reply is dropped.
+  // `committed` always lists exactly the tokens that have been fed.
+  async generate(messages, { max = 160, onToken, stopped = () => false } = {}) {
     const { maxCtx, prefillMax } = this.spec;
     const ids = this.encode(messages);
     if (ids.length + 16 > maxCtx)
@@ -221,11 +224,14 @@ class ChatLoop {
       const n = Math.min(prefillMax, ids.length - off);
       logits = await this.forward(ids.slice(off, off + n), off);
       off += n;
+      this.committed = ids.slice(0, off);
+      if (stopped()) throw new Error("cancelled");
     }
     this.committed = ids.slice();
 
     const out = [];
     for (let n = 0; n < budget; n++) {
+      if (stopped()) throw new Error("cancelled");
       let next = -1;
       let best = -Infinity;
       for (let i = 0; i < logits.length; i++)
@@ -253,6 +259,7 @@ class ChatLoop {
 let loop = null;
 // The runtime must not be entered twice at once, so calls go one at a time.
 let queue = Promise.resolve();
+const cancelled = new Set(); // chat ids the page no longer wants
 
 async function load() {
   if (!globalThis.isSecureContext || !navigator.gpu)
@@ -321,16 +328,26 @@ self.onmessage = ({ data }) => {
     );
   else if (data.type === "chat") {
     const { id, messages, max } = data;
+    const stopped = () => cancelled.has(id);
     queue = queue
-      .then(() =>
-        loop.generate(messages, {
+      .then(() => {
+        // cancelled while it waited its turn: never started
+        if (stopped()) throw new Error("cancelled");
+        return loop.generate(messages, {
           max,
+          stopped,
           onToken: text => postMessage({ type: "token", id, text }),
-        })
-      )
+        });
+      })
       .then(
         out => postMessage({ type: "result", id, ...out }),
-        e => postMessage({ type: "error", id, message: withLogs(e) })
-      );
-  }
+        e =>
+          postMessage({
+            type: "error",
+            id,
+            message: stopped() ? "cancelled" : withLogs(e),
+          })
+      )
+      .then(() => cancelled.delete(id));
+  } else if (data.type === "cancel") cancelled.add(data.id);
 };
