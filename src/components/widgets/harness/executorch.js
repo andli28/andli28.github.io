@@ -167,7 +167,7 @@ export class ChatLoop {
     return ids;
   }
 
-  async generate(messages, { max = 160 } = {}) {
+  async generate(messages, { max = 160, onToken } = {}) {
     const { maxCtx, prefillMax } = this.spec;
     const ids = this.encode(messages);
     if (ids.length + 16 > maxCtx)
@@ -204,6 +204,7 @@ export class ChatLoop {
       if (next < 0) throw new Error("the model produced no usable output");
       if (this.eos.has(next)) break;
       out.push(next);
+      onToken?.(this.tokenizer.decode(out, { skip_special_tokens: true }));
       if (n + 1 < budget) {
         logits = await this.forward([next], this.committed.length);
         this.committed.push(next);

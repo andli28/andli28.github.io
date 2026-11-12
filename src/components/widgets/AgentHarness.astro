@@ -149,27 +149,6 @@
   .ah-round:disabled {
     opacity: 0.35;
   }
-  .ah-stars {
-    display: flex;
-    gap: 2px;
-    color: var(--ah-edge);
-  }
-  .ah-stars .ah-on {
-    color: var(--ah-task);
-  }
-  .ah-stars .ah-i {
-    width: 20px;
-    height: 20px;
-    stroke-width: 0;
-  }
-  .ah-stars.ah-big .ah-i {
-    width: 40px;
-    height: 40px;
-  }
-  .ah-stars .ah-pop.ah-on {
-    animation: ah-pop 420ms var(--ah-ease) both;
-    animation-delay: var(--d, 0ms);
-  }
   .ah-tools {
     display: flex;
     gap: 6px;
@@ -206,38 +185,23 @@
     line-height: 16px;
   }
 
-  /* ---- board ---- */
-  .ah-board {
-    position: relative;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-  }
+  /* ---- request, board ---- */
   .ah-top {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    align-items: center;
-    column-gap: 8px;
     text-align: center;
   }
   .ah-ask {
-    grid-column: 2;
-    margin: 0;
-    max-width: 34ch;
+    margin: 0 auto;
+    max-width: 46ch;
     font-size: 19px;
     font-weight: 800;
     letter-spacing: -0.01em;
     line-height: 1.25;
-    min-height: 2.5em;
-    display: grid;
-    align-items: end;
     text-wrap: balance;
   }
   .ah-tip {
-    grid-column: 1 / -1;
     margin: 4px auto 0;
     min-height: 1.4em;
-    max-width: 52ch;
+    max-width: 60ch;
     color: var(--ah-mute);
     font-weight: 600;
     text-wrap: pretty;
@@ -245,24 +209,12 @@
   .ah-tip.ah-bad {
     color: var(--ah-red);
   }
-  .ah-hearts {
-    grid-column: 3;
-    justify-self: start;
-    display: flex;
-    gap: 2px;
-    color: var(--ah-red);
-  }
-  .ah-hearts .ah-i {
-    width: 20px;
-    height: 20px;
-    stroke-width: 0;
-    transition:
-      transform 300ms var(--ah-ease),
-      opacity 300ms;
-  }
-  .ah-hearts .ah-gone {
-    opacity: 0.18;
-    transform: scale(0.7);
+  .ah-board {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
   }
 
   /* ---- the map ---- */
@@ -278,8 +230,8 @@
   .ah-b-guard {
     --c: var(--ah-red);
   }
-  .ah-c-persist,
-  .ah-b-persist {
+  .ah-c-memory,
+  .ah-b-memory {
     --c: var(--ah-amber);
   }
   .ah-c-verify,
@@ -296,13 +248,13 @@
     grid-template-columns: 1fr minmax(96px, 0.7fr) 1fr;
     grid-template-areas:
       "control context guard"
-      "persist model action"
+      "memory model action"
       ". verify .";
     flex: 1;
     gap: 34px 26px;
     align-items: center;
     align-content: space-evenly;
-    margin: 18px 0 0;
+    margin: 8px 0 0;
     padding: 18px 12px;
     border: 1.5px dashed var(--ah-edge);
     border-radius: 20px;
@@ -343,7 +295,7 @@
   .ah-w-guard {
     --c: var(--ah-red);
   }
-  .ah-w-persist {
+  .ah-w-memory {
     --c: var(--ah-amber);
   }
   .ah-w-verify {
@@ -375,8 +327,8 @@
   .ah-b-guard {
     grid-area: guard;
   }
-  .ah-b-persist {
-    grid-area: persist;
+  .ah-b-memory {
+    grid-area: memory;
   }
   .ah-b-action {
     grid-area: action;
@@ -605,157 +557,126 @@
   .ah-bot[data-face="sad"] .ah-body {
     rotate: 6deg;
   }
-  .ah-bubble {
-    position: absolute;
-    left: 0;
-    top: -72px;
-    transform: translateX(-50%) translateY(4px);
-    white-space: nowrap;
-    padding: 4px 10px;
-    border-radius: 10px;
-    background: var(--ah-ink);
-    color: var(--ah-bg);
-    font-size: 13px;
-    font-weight: 700;
-    opacity: 0;
-    transition:
-      opacity 160ms var(--ah-ease),
-      transform 160ms var(--ah-ease);
-  }
-  .ah-bubble.ah-show {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-  }
-
-  /* ---- chips ---- */
-  .ah-chip {
-    --c: var(--ah-ink);
-    position: relative;
-    display: inline-flex !important;
-    align-items: center;
-    gap: 5px;
-    height: 38px;
-    min-width: 38px;
-    padding: 0 9px !important;
-    border-radius: 12px;
-    background: color-mix(in srgb, var(--c) 12%, var(--ah-tile)) !important;
-    box-shadow: 0 3px 0 color-mix(in srgb, var(--c) 35%, var(--ah-edge));
-    color: var(--c) !important;
-    font-weight: 700;
-    font-size: 13px;
-    transition:
-      transform 120ms var(--ah-ease),
-      box-shadow 120ms var(--ah-ease),
-      opacity 150ms;
-    touch-action: none;
-  }
-  .ah-chip.ah-tool {
-    --c: var(--ah-mute);
-    color: var(--ah-ink) !important;
-  }
-  .ah-chip.ah-safe {
-    --c: var(--ah-red);
-  }
-  .ah-chip.ah-ctx {
-    --c: var(--ah-blue);
-  }
-  .ah-chip.ah-scale {
-    --c: var(--ah-green);
-  }
-  .ah-chip.ah-core {
-    --c: var(--ah-accent);
-  }
-  .ah-chip em {
-    font-style: normal;
-    font-size: 11px;
-  }
-  .ah-chip:not(:disabled):active {
-    transform: translateY(2px);
-    box-shadow: 0 1px 0 color-mix(in srgb, var(--c) 35%, var(--ah-edge));
-  }
-  .ah-chip:disabled {
-    opacity: 0.35;
-  }
-  .ah-chip.ah-lock {
-    box-shadow: none;
-    background: transparent !important;
-    opacity: 0.75;
-    cursor: default;
-    touch-action: auto;
-  }
-  .ah-rack .ah-chip.ah-lock {
-    padding: 0 4px !important;
-    min-width: 28px;
-  }
-  .ah-chip.ah-mini {
-    height: 26px;
-    min-width: 26px;
-    padding: 0 4px !important;
-    border-radius: 8px;
-    font-size: 11px;
-    gap: 2px;
-    box-shadow: 0 2px 0 color-mix(in srgb, var(--c) 35%, var(--ah-edge));
-  }
-  .ah-chip.ah-mini em {
-    font-size: 9px;
-    letter-spacing: -0.02em;
-  }
-  .ah-chip.ah-mini .ah-i {
-    width: 15px;
-    height: 15px;
-  }
-  .ah-dids {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 6px;
-    margin-bottom: 12px;
-  }
-  .ah-did {
+  /* ---- the model chip ---- */
+  .ah .ah-modelchip {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    padding: 4px 10px 4px 7px;
-    border-radius: 10px;
-    background: color-mix(in srgb, var(--c) 14%, var(--ah-tile));
-    color: var(--c);
-    font-size: 13px;
+    gap: 7px;
+    height: 32px;
+    padding: 0 12px 0 10px;
+    border-radius: 16px;
+    background: var(--ah-tile);
+    box-shadow: 0 2px 0 var(--ah-edge);
+    font-size: 12.5px;
     font-weight: 700;
+    color: var(--ah-mute);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
-  .ah-did .ah-i {
-    width: 15px;
-    height: 15px;
+  .ah-short {
+    display: none;
   }
-  .ah-note header {
-    color: var(--c, var(--ah-accent)) !important;
+  .ah-modelchip i {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ah-edge);
+  }
+  .ah-modelchip[data-state="real"] {
+    color: var(--ah-ink);
+  }
+  .ah-modelchip[data-state="real"] i {
+    background: var(--ah-green);
+  }
+  .ah-modelchip[data-state="loading"] i {
+    background: var(--ah-amber);
+    animation: ah-blink 1s ease-in-out infinite;
+  }
+  .ah-modelchip[data-state="failed"] i {
+    background: var(--ah-red);
+  }
+  @keyframes ah-blink {
+    50% {
+      opacity: 0.3;
+    }
   }
 
-  /* ---- window ---- */
-  .ah-dock {
-    width: 100%;
-    max-width: 720px;
-    margin: 0 auto;
+  /* ---- the trace ---- */
+  .ah-side {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 12px;
+    border-radius: 20px;
+    background: var(--ah-card);
+    box-shadow: 0 1px 0 var(--ah-line);
   }
-  /* ---- the log ---- */
-  .ah-feed {
-    height: 5.6em;
-    margin: 10px 0 8px;
-    padding: 6px 10px;
-    border-radius: 12px;
-    background: color-mix(in srgb, var(--ah-edge) 22%, transparent);
+  .ah-sidehead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 28px;
+    margin-bottom: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ah-mute);
+  }
+  .ah-flip {
+    display: flex;
+    padding: 2px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--ah-edge) 35%, transparent);
+  }
+  .ah .ah-flip button {
+    padding: 3px 10px;
+    border-radius: 8px;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--ah-mute);
+  }
+  .ah .ah-flip button[aria-pressed="true"] {
+    background: var(--ah-tile);
+    color: var(--ah-ink);
+    box-shadow: 0 1px 0 var(--ah-edge);
+  }
+  .ah-trace {
+    flex: 1;
+    min-height: 200px;
+    max-height: 46svh;
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-width: thin;
     font-size: 13px;
-    line-height: 1.3;
+    line-height: 1.35;
     user-select: text;
     -webkit-user-select: text;
+  }
+  .ah-with,
+  .ah-idle,
+  .ah-evalhead {
+    margin: 0 0 6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ah-mute);
+  }
+  .ah-idle {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .ah-evalhead {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1.5px dashed var(--ah-edge);
+    font-variant-numeric: tabular-nums;
   }
   .ah-line {
     display: flex;
     gap: 8px;
-    margin: 0;
-    padding: 1.5px 0;
+    padding: 3px 0;
     animation: ah-linein 180ms var(--ah-ease) both;
   }
   .ah-line b {
@@ -763,7 +684,8 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    min-width: 6.6em;
+    align-self: flex-start;
+    width: 7.4em;
     font-weight: 800;
     color: var(--c, var(--ah-ink));
   }
@@ -774,33 +696,90 @@
   .ah-line span {
     min-width: 0;
     font-weight: 600;
-    color: var(--ah-ink);
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
   }
-  .ah-by-model span {
+  .ah-k-model span,
+  .ah-k-tool span {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .ah-k-tool span {
     color: var(--ah-mute);
+  }
+  .ah-k-user span {
+    font-weight: 700;
+  }
+  .ah-k-part {
+    margin: 1px -6px;
+    padding: 3px 6px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--c) 10%, transparent);
+  }
+  .ah-k-end span,
+  .ah-line.ah-bad span {
+    color: var(--ah-red);
   }
   .ah-line.ah-good span {
     color: var(--ah-green);
   }
-  .ah-line.ah-bad span {
-    color: var(--ah-red);
+  .ah-fold {
+    cursor: pointer;
   }
-  .ah-rule,
-  .ah-idle {
+  .ah-fold:not(.ah-open) span {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .ah-askrow {
+    display: flex;
+    gap: 8px;
+    margin: 4px 0 6px 7.4em;
+    padding-left: 8px;
+  }
+  .ah-askrow .ah-btn {
+    height: 34px;
+    padding: 0 18px !important;
+    border-radius: 17px;
+    font-size: 13px;
+    box-shadow: 0 3px 0 var(--ah-edge);
+  }
+  .ah-askrow .ah-btn.ah-run {
+    box-shadow: 0 3px 0 var(--ah-accent-edge);
+  }
+  .ah-evals {
+    list-style: none;
     margin: 0;
-    padding: 2px 0;
-    text-align: center;
-    font-size: 11px;
+    padding: 0;
+    display: grid;
+    gap: 4px;
+  }
+  .ah-evals li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+  }
+  .ah-evals .ah-i {
+    width: 16px;
+    height: 16px;
+    padding: 2px;
+    border-radius: 50%;
+    stroke-width: 3.5;
+    color: #fff;
+    background: var(--ah-green);
+  }
+  .ah-evals .ah-e-no .ah-i {
+    background: var(--ah-red);
+  }
+  .ah-evals .ah-e-todo {
     color: var(--ah-mute);
   }
-  .ah-idle {
-    padding-top: 1.9em;
-    letter-spacing: 0;
-    text-transform: none;
-    font-size: 13px;
+  .ah-evals .ah-e-todo .ah-i {
+    background: var(--ah-edge);
   }
   @keyframes ah-linein {
     from {
@@ -808,240 +787,13 @@
       transform: translateY(4px);
     }
   }
-  .ah-winhead {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 4px;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--ah-mute);
-    font-variant-numeric: tabular-nums;
-  }
-  .ah-clock {
-    color: var(--ah-ink);
-  }
-  .ah .ah-winq {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    letter-spacing: inherit;
-    text-transform: inherit;
-    font-weight: inherit;
-  }
-  .ah-winq i {
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    display: grid;
-    place-items: center;
-    background: var(--ah-tile);
-    box-shadow: 0 1px 0 var(--ah-edge);
-    font-style: normal;
-    letter-spacing: 0;
-  }
-  .ah-legend {
-    list-style: none;
-    margin: 0 0 14px;
-    padding: 0;
-    display: grid;
-    gap: 10px;
-    font-weight: 600;
-  }
-  .ah-legend li {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .ah-legend .ah-block {
-    position: relative;
-    flex: none;
-    width: 44px;
-    height: 32px;
-    left: auto;
-  }
-  .ah-winhead .ah-bad {
-    color: var(--ah-red);
-  }
-  .ah-win {
-    position: relative;
-    height: 40px;
-    margin-top: 5px;
-  }
-  .ah-cells {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    grid-template-columns: repeat(var(--n), 1fr);
-    gap: 2px;
-  }
-  .ah-cell {
-    border-radius: 7px;
-    background: color-mix(in srgb, var(--ah-edge) 38%, transparent);
-  }
-  .ah-blocks {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-  }
-  .ah-block {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: calc(var(--x) / var(--n) * 100%);
-    width: calc(var(--w) / var(--n) * 100% - 2px);
-    border-radius: 7px;
-    background: color-mix(in srgb, var(--ah-blue) 26%, var(--ah-tile));
-    display: grid;
-    place-items: center;
-    color: color-mix(in srgb, var(--ah-ink) 55%, transparent);
-    overflow: hidden;
-  }
-  .ah-block .ah-i {
-    width: 14px;
-    height: 14px;
-  }
-  .ah-block.ah-in {
-    animation: ah-blockin 300ms var(--ah-ease) both;
-  }
-  .ah-block[class*="ah-c-"] {
-    background: color-mix(in srgb, var(--c) 30%, var(--ah-tile));
-  }
-  /* what a part keeps in the window all the time: lighter, hatched */
-  .ah-k-def,
-  .ah-k-prompt,
-  .ah-k-memory,
-  .ah-k-skills,
-  .ah-k-progress {
-    background: repeating-linear-gradient(
-      -45deg,
-      color-mix(in srgb, var(--c) 24%, var(--ah-tile)) 0 5px,
-      color-mix(in srgb, var(--c) 12%, var(--ah-tile)) 5px 10px
-    ) !important;
-  }
-  .ah-k-task {
-    background: var(--ah-task);
-    color: #3a2f00;
-  }
-  .ah-k-summary {
-    box-shadow: inset 0 0 0 2px var(--c);
-  }
-  .ah-k-err,
-  .ah-k-check.ah-red {
-    background: color-mix(
-      in srgb,
-      var(--ah-red) 30%,
-      var(--ah-tile)
-    ) !important;
-    color: var(--ah-red);
-  }
-  .ah-errmark {
-    font-size: 11px;
-    font-weight: 800;
-  }
-  .ah-spiked {
-    box-shadow: inset 0 0 0 2px var(--ah-red);
-  }
-  .ah-shielded {
-    box-shadow:
-      inset 0 0 0 2px var(--ah-card),
-      inset 0 0 0 4px var(--ah-red);
-  }
-  .ah-parked {
-    border-style: dashed;
-    box-shadow: inset 0 -3px 0 var(--ah-amber);
-  }
-  .ah-over {
-    background: var(--ah-red) !important;
-  }
-  .ah-gems {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 4px;
-    display: flex;
-    justify-content: center;
-    gap: 2px;
-  }
-  .ah-win.ah-scan::after {
-    content: "";
-    position: absolute;
-    inset: -3px;
-    border-radius: 10px;
-    box-shadow: 0 0 0 2px var(--ah-accent);
-    animation: ah-scan 380ms ease-out both;
-    pointer-events: none;
-  }
-
-  /* ---- meter ---- */
-  .ah-meter {
-    position: relative;
-    margin-top: 14px;
-  }
-  .ah-bar {
-    position: relative;
-    height: 6px;
-    border-radius: 3px;
-    background: color-mix(in srgb, var(--ah-edge) 45%, transparent);
-  }
-  .ah-fillbar {
-    position: absolute;
-    inset: 0;
-    border-radius: 3px;
-    background: var(--ah-green);
-    transform: scaleX(0);
-    transform-origin: 0 50%;
-    transition:
-      transform 260ms var(--ah-ease),
-      background-color 200ms;
-  }
-  .ah-overpar .ah-fillbar {
-    background: var(--ah-amber);
-  }
-  .ah-partick {
-    position: absolute;
-    left: 66.67%;
-    top: -3px;
-    width: 2px;
-    height: 12px;
-    border-radius: 1px;
-    background: var(--ah-ink);
-  }
-  .ah-nums {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 6px;
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--ah-mute);
-    font-variant-numeric: tabular-nums;
-  }
-  .ah-tok {
-    position: relative;
-  }
-  .ah-plus {
-    position: absolute;
-    left: calc(100% + 8px);
-    top: 0;
-    font-size: 12px;
-    font-weight: 800;
-    color: var(--ah-ink);
-    animation: ah-plus 900ms var(--ah-ease) both;
-    pointer-events: none;
-  }
-  .ah-plus.ah-cached,
-  .ah-plus.ah-small {
-    color: var(--ah-green);
-  }
 
   /* ---- buttons ---- */
   .ah-actions {
     display: grid;
     grid-template-columns: 1fr 2.4fr;
     gap: 8px;
-    margin-top: 14px;
+    margin-top: 12px;
   }
   .ah-btn {
     display: flex !important;
@@ -1114,44 +866,6 @@
     color: var(--ah-mute);
     font-weight: 600;
   }
-  .ah-clear {
-    text-align: center;
-  }
-  .ah-kicker {
-    margin: 0 0 8px;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--ah-mute);
-  }
-  .ah-clear .ah-stars {
-    justify-content: center;
-  }
-  .ah-score {
-    margin: 6px 0 0;
-    font-size: 22px;
-    font-weight: 800;
-    font-variant-numeric: tabular-nums;
-  }
-  .ah-clear .ah-stars .ah-i {
-    color: var(--ah-green);
-    stroke-width: 2.5;
-  }
-  .ah-clear .ah-stars .ah-on .ah-i {
-    color: var(--ah-task);
-    stroke-width: 0;
-  }
-  .ah-why {
-    margin: 2px 0 14px;
-    color: var(--ah-mute);
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-  }
-  .ah-clear .ah-actions {
-    grid-template-columns: 1fr 1.6fr;
-    margin-top: 16px;
-  }
   .ah-notes {
     display: grid;
     gap: 10px;
@@ -1203,204 +917,6 @@
   }
   .ah-note.ah-locked header {
     color: var(--ah-mute);
-  }
-
-  /* ---- drill ---- */
-  .ah-drill {
-    display: grid;
-    gap: 12px;
-  }
-  .ah-drillbar {
-    height: 6px;
-    border-radius: 3px;
-    background: color-mix(in srgb, var(--ah-edge) 45%, transparent);
-    overflow: hidden;
-  }
-  .ah-drillbar span {
-    display: block;
-    height: 100%;
-    background: var(--ah-accent);
-    transform-origin: 0 50%;
-    transition: transform 100ms linear;
-  }
-  .ah-drillcard {
-    min-height: 96px;
-    display: grid;
-    place-items: center;
-    padding: 12px;
-    border-radius: 16px;
-    background: var(--ah-tile);
-    box-shadow: 0 4px 0 var(--ah-edge);
-    font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    font-size: 17px;
-    font-weight: 600;
-    text-align: center;
-    overflow-wrap: anywhere;
-  }
-  .ah-drillcard.ah-in {
-    animation: ah-rise 220ms var(--ah-ease) both;
-  }
-  .ah-drillwhy {
-    margin: 0;
-    min-height: 2.8em;
-    color: var(--ah-mute);
-    font-weight: 600;
-  }
-  .ah-drillwhy.ah-bad {
-    color: var(--ah-red);
-  }
-  .ah-actions.ah-three {
-    grid-template-columns: 1fr 1fr 1fr;
-  }
-
-  /* ---- live bench ---- */
-  .ah-engine {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 4px;
-    padding: 4px;
-    border-radius: 16px;
-    background: color-mix(in srgb, var(--ah-edge) 40%, transparent);
-  }
-  .ah-seg {
-    height: 38px;
-    border-radius: 12px;
-    font-weight: 700;
-    color: var(--ah-mute) !important;
-  }
-  .ah-seg[aria-pressed="true"] {
-    background: var(--ah-tile) !important;
-    color: var(--ah-ink) !important;
-    box-shadow: 0 2px 0 var(--ah-edge);
-  }
-  .ah-enginenote {
-    margin: 8px 2px 14px;
-    min-height: 2.8em;
-    font-size: 13.5px;
-    color: var(--ah-mute);
-  }
-  .ah-switches {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 16px;
-  }
-  .ah-switch {
-    touch-action: manipulation;
-  }
-  .ah-switch:disabled {
-    opacity: 0.7;
-  }
-  .ah-switch[aria-pressed="false"] {
-    --c: var(--ah-mute);
-    background: transparent !important;
-    box-shadow: inset 0 0 0 1.5px var(--ah-edge);
-    color: var(--ah-mute) !important;
-  }
-  .ah-lanes {
-    display: grid;
-    gap: 6px;
-    font-variant-numeric: tabular-nums;
-  }
-  .ah-lane {
-    display: grid;
-    grid-template-columns: 52px repeat(7, 1fr) 34px 58px 40px;
-    align-items: center;
-    gap: 4px;
-    font-size: 13px;
-    font-weight: 700;
-  }
-  .ah-lane > span {
-    text-align: right;
-  }
-  .ah-lanehead {
-    font-size: 9px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--ah-mute);
-    align-items: end;
-  }
-  .ah-lanehead > span:not(:nth-last-child(-n + 3)) {
-    text-align: center;
-    line-height: 1.1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .ah-lane i {
-    height: 30px;
-    border-radius: 9px;
-    background: color-mix(in srgb, var(--ah-edge) 40%, transparent);
-    transition: background-color 200ms;
-  }
-  .ah-lane i.ah-live {
-    background: color-mix(in srgb, var(--ah-accent) 35%, transparent);
-    animation: ah-pulse 700ms ease-in-out infinite alternate;
-  }
-  .ah-lane i.ah-pass {
-    background: var(--ah-green);
-  }
-  .ah-lane i.ah-nope {
-    background: color-mix(in srgb, var(--ah-red) 75%, var(--ah-tile));
-  }
-  .ah-benchnow {
-    margin: 12px 2px;
-    min-height: 2.8em;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--ah-mute);
-    overflow-wrap: anywhere;
-  }
-  .ah-benchgo {
-    width: 100%;
-  }
-  .ah-transcripts h4 {
-    margin: 18px 0 8px;
-    font-size: 11px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--ah-mute);
-  }
-  .ah-transcripts details {
-    background: var(--ah-tile);
-    border-radius: 12px;
-    padding: 10px 12px;
-    margin-bottom: 6px;
-  }
-  .ah-transcripts summary {
-    font-weight: 700;
-    cursor: pointer;
-  }
-  .ah-transcripts details > div {
-    margin-top: 10px;
-    font-size: 12.5px;
-  }
-  .ah-transcripts p {
-    margin: 4px 0;
-    font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    font-size: 11.5px;
-    overflow-wrap: anywhere;
-    white-space: pre-wrap;
-  }
-  .ah-transcripts em {
-    display: inline-block;
-    min-width: 58px;
-    font-style: normal;
-    font-weight: 700;
-    color: var(--ah-mute);
-  }
-  .ah-transcripts .ah-l-model em {
-    color: var(--ah-accent);
-  }
-  .ah-transcripts .ah-l-fail {
-    color: var(--ah-red);
-  }
-  .ah-transcripts .ah-l-pass {
-    color: var(--ah-green);
-  }
-  @keyframes ah-pulse {
-    to {
-      opacity: 0.4;
-    }
   }
 
   /* ---- motion ---- */
@@ -1500,12 +1016,26 @@
     .ah-ask {
       font-size: 17px;
     }
-    .ah-feed {
-      height: 4.3em;
-      font-size: 12.5px;
+    .ah-line {
+      flex-direction: column;
+      gap: 0;
     }
     .ah-line b {
-      min-width: 5.8em;
+      width: auto;
+    }
+    .ah-askrow {
+      margin-left: 0;
+      padding-left: 0;
+    }
+    .ah-long {
+      display: none;
+    }
+    .ah-short {
+      display: inline !important;
+    }
+    .ah .ah-modelchip {
+      padding: 0 9px 0 8px;
+      font-size: 11.5px;
     }
     .ah-tip {
       min-height: 2.8em;
@@ -1554,6 +1084,15 @@
   }
 
   @media (min-width: 900px) {
+    .ah-wrap {
+      height: 100svh;
+    }
+    .ah-board {
+      grid-template-columns: minmax(0, 1fr) min(460px, 38vw);
+    }
+    .ah-trace {
+      max-height: none;
+    }
     .ah-map {
       gap: 22px 48px;
       padding: 12px;
