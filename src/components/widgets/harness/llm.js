@@ -8,6 +8,10 @@
 
 import { est } from "./agent.js";
 
+// The real model, as the page names it. model-worker.js can't import, so its
+// own SPEC must say the same.
+export const REAL = { name: "Qwen 3 0.6B", megabytes: 400 };
+
 const call = (tool, args) => JSON.stringify({ tool, args });
 const nap = ms => new Promise(r => setTimeout(r, ms));
 
@@ -155,8 +159,13 @@ export function modelManager({ want = "auto", onChange = () => {} } = {}) {
     set({ state: "loading", stage: "", loaded: 0, total: 0, why: "" });
     loading = import("./executorch.js")
       .then(m =>
-        m.executorch(p =>
-          set({ stage: p.stage, loaded: p.loaded, total: p.total })
+        m.executorch(
+          p => set({ stage: p.stage, loaded: p.loaded, total: p.total }),
+          // the worker died after loading: back to the stand-in
+          why => {
+            real = null;
+            if (status.state === "real") set({ state: "failed", why });
+          }
         )
       )
       .then(m => {
@@ -164,7 +173,8 @@ export function modelManager({ want = "auto", onChange = () => {} } = {}) {
         if (status.state === "loading") set({ state: "real" });
       })
       .catch(e => {
-        set({ state: "failed", why: String(e.message || e) });
+        if (status.state === "loading")
+          set({ state: "failed", why: String(e.message || e) });
       })
       .finally(() => (loading = null));
     return loading;
@@ -193,6 +203,8 @@ export function modelManager({ want = "auto", onChange = () => {} } = {}) {
         return "off";
       }
       if (real) set({ state: "real" });
+      // a load that was switched off part-way is still running: rejoin it
+      else if (loading) set({ state: "loading", why: "" });
       else load();
       return "on";
     },

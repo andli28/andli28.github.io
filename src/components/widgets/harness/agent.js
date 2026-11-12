@@ -71,14 +71,16 @@ export const TOOLS = {
     run: (w, a) => {
       const p = String(a.path || "");
       const files = { ...w.files, ...w.scratch };
-      if (p in files) {
+      if (Object.hasOwn(files, p)) {
         if (!a.grep) return files[p];
         const hits = files[p]
           .split("\n")
           .filter(l => l.toLowerCase().includes(String(a.grep).toLowerCase()));
         return hits.length ? hits.join("\n") : "no matching lines";
       }
-      const near = Object.keys(files).find(f => f.endsWith(p.split("/").pop()));
+      // a path with no file name in it has no near miss
+      const name = p.split("/").pop();
+      const near = name && Object.keys(files).find(f => f.endsWith(name));
       throw new Error(
         `no such file: ${p}${near ? `. Did you mean ${near}? Use that path` : ""}`
       );
@@ -98,7 +100,7 @@ export const TOOLS = {
     untrusted: true,
     run: (w, a) => {
       const u = String(a.url || "").replace(/^https?:\/\//, "");
-      if (u in w.pages) return w.pages[u];
+      if (Object.hasOwn(w.pages, u)) return w.pages[u];
       const near = Object.keys(w.pages).find(
         k => k.split("/").pop() === u.split("/").pop()
       );
@@ -582,7 +584,8 @@ const RETRY =
  * Run one task under a harness.
  *   parts   the ids of the connected parts
  *   model   { chat(messages, opts) → { text, in, out } }
- *   io      { onStep(entry), onToken(textSoFar), askUser({tool, args}) → bool }
+ *   io      { onStep(entry), onToken(textSoFar), askUser({tool, args}) → bool,
+ *             alive() → false once the run has been abandoned }
  * Returns the trace, the facts the evals read, and the graded evals.
  */
 export async function runTask(task, parts, model, io = {}) {
@@ -592,6 +595,7 @@ export async function runTask(task, parts, model, io = {}) {
     onToken,
     onContext = () => {},
     askUser = async () => true,
+    alive = () => true,
   } = io;
   const world = makeWorld();
   const box = toolbox(task);
@@ -620,7 +624,12 @@ export async function runTask(task, parts, model, io = {}) {
     await onStep(e);
   };
   const chat = async (messages, opts) => {
-    const out = await model.chat(messages, { task, onToken, ...opts });
+    // a summary is the harness's own business: it isn't streamed as a reply
+    const out = await model.chat(messages, {
+      task,
+      onToken: opts.summary ? undefined : onToken,
+      ...opts,
+    });
     r.tokens += out.in + out.out;
     return out.text;
   };
@@ -679,28 +688,37 @@ export async function runTask(task, parts, model, io = {}) {
     const loaded = new Set();
 
     while (r.turns < CAP) {
+      // abandoned (the player moved on): stop before calling the model again
+      if (!alive()) return false;
       // Compaction: fold older steps into a summary that rides along with
       // the task, which stays word for word.
       if (h.compact && size() > limit * 0.6 && msgs.length > pin + 3) {
         const old = msgs.slice(pin + 1, -2);
-        const text = await chat(
-          [
-            {
-              role: "system",
-              content:
-                "You compress an agent's notes. Do NOT answer the task. List what has been done so far: each file or page read and the one fact found in it that matters, such as a name, a number or the next file to read. At most 60 words.",
-            },
-            {
-              role: "user",
-              content:
-                `Task: ${ask}\n\n${summary ? `Known so far: ${summary}\n` : ""}${old.map(m => m.content).join("\n")}`.slice(
-                  0,
-                  limit * 3
-                ),
-            },
-          ],
-          { summary: true, max: 120 }
-        );
+        let text;
+        try {
+          text = await chat(
+            [
+              {
+                role: "system",
+                content:
+                  "You compress an agent's notes. Do NOT answer the task. List what has been done so far: each file or page read and the one fact found in it that matters, such as a name, a number or the next file to read. At most 60 words.",
+              },
+              {
+                role: "user",
+                content:
+                  `Task: ${ask}\n\n${summary ? `Known so far: ${summary}\n` : ""}${old.map(m => m.content).join("\n")}`.slice(
+                    0,
+                    limit * 3
+                  ),
+              },
+            ],
+            { summary: true, max: 120 }
+          );
+        } catch (e) {
+          r.crashed = true;
+          await note("end", `Model error: ${e.message}`);
+          return false;
+        }
         r.turns++;
         summary = text;
         msgs.splice(pin + 1, old.length);

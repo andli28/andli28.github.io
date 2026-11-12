@@ -57,6 +57,7 @@ const FILES = {
   },
 };
 
+// name and megabytes must match REAL in llm.js (a classic worker can't import)
 const SPEC = {
   name: "Qwen 3 0.6B",
   megabytes: Math.round(FILES.pte.bytes / 1e6),

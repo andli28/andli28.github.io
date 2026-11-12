@@ -2,25 +2,31 @@
 // ExecuTorch's WebGPU backend) loads and runs in model-worker.js, so nothing
 // here blocks the page. Nothing loads until this is called.
 
-export const SPEC = { name: "Qwen 3 0.6B", megabytes: 400 };
+import { REAL } from "./llm.js";
 
 /**
  * Start the worker, load the model and return a model adapter:
  *   { name, real, chat(messages, { max, onToken }) → { text, in, out } }
  * onProgress({ stage, loaded, total }) reports the load. `stage` is
  * "download", "cache" (everything was already in the browser) or "gpu".
+ * onDead(message) is called if the worker stops after it had loaded.
  */
-export function executorch(onProgress = () => {}) {
+export function executorch(onProgress = () => {}, onDead = () => {}) {
   return new Promise((resolve, reject) => {
     if (!globalThis.isSecureContext || !navigator.gpu)
       return reject(new Error("this browser doesn't have WebGPU"));
     const worker = new Worker(new URL("./model-worker.js", import.meta.url));
     const waiting = new Map(); // chat id → { resolve, reject, onToken }
     let ready = false;
+    let dead = null;
     let n = 0;
     const fail = message => {
       const e = new Error(message);
+      // the worker holds the runtime and the model: let go of it
+      worker.terminate();
+      dead = e;
       if (!ready) reject(e);
+      else onDead(message);
       for (const w of waiting.values()) w.reject(e);
       waiting.clear();
     };
@@ -31,10 +37,11 @@ export function executorch(onProgress = () => {}) {
       else if (data.type === "ready") {
         ready = true;
         resolve({
-          name: SPEC.name,
+          name: REAL.name,
           real: true,
           chat(messages, { max, onToken } = {}) {
             return new Promise((res, rej) => {
+              if (dead) return rej(dead);
               const id = ++n;
               waiting.set(id, { resolve: res, reject: rej, onToken });
               worker.postMessage({

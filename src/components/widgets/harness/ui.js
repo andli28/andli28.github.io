@@ -5,13 +5,13 @@
 
 import { TASKS, runTask, rawMessages } from "./agent.js";
 import { BRANCHES, PARTS, ORDER } from "./world.js";
-import { modelManager } from "./llm.js";
+import { modelManager, REAL as MODEL } from "./llm.js";
 import { icon } from "./icons.js";
 
 const KEY = "ah:v5";
 const ALL = Object.keys(PARTS);
 const LAST = TASKS.length - 1;
-const REAL = "Qwen 3 0.6B";
+const REAL = MODEL.name;
 // How long each trace line holds when the stand-in is driving, in ms. The
 // real model sets its own pace.
 const PACE = { line: 420, signal: 380 };
@@ -135,7 +135,7 @@ export function mountHarness(root) {
   const pop = h(
     "div",
     "ah-pop",
-    `<b>${REAL}</b> runs in this browser tab, on your GPU, powered by <a href="https://executorch.ai/" target="_blank" rel="noopener">ExecuTorch</a>. Nothing you do here is sent to a server. The model is about 400 MB and is downloaded once.<br><br>The <b>stand-in</b> is a script that behaves like a small model, for devices that can't run the real one.`
+    `<b>${REAL}</b> runs in this browser tab, on your GPU, powered by <a href="https://executorch.ai/" target="_blank" rel="noopener">ExecuTorch</a>. Nothing you do here is sent to a server. The model is about ${MODEL.megabytes} MB and is downloaded once.<br><br>The <b>stand-in</b> is a script that behaves like a small model, for devices that can't run the real one.`
   );
   pop.hidden = true;
   chipBox.append(chip, infoBtn, pop);
@@ -287,10 +287,10 @@ export function mountHarness(root) {
       s.state === "real"
         ? `${REAL}, running in this tab on your GPU. Tap to use the scripted stand-in.`
         : s.state === "loading"
-          ? `Loading ${REAL} (about 400 MB, kept by your browser). You can play meanwhile. Tap to cancel.`
+          ? `Loading ${REAL} (about ${MODEL.megabytes} MB, kept by your browser). You can play meanwhile. Tap to cancel.`
           : s.state === "failed"
             ? `${REAL} could not load here (${s.why}). Tap to try again.`
-            : `A scripted stand-in that behaves like a small model. Tap to load ${REAL} into this tab (about 400 MB).`;
+            : `A scripted stand-in that behaves like a small model. Tap to load ${REAL} into this tab (about ${MODEL.megabytes} MB).`;
   }
   const models = modelManager({ want: state.model, onChange: syncChip });
   syncChip(models.status());
@@ -620,77 +620,102 @@ export function mountHarness(root) {
     const pace = ms =>
       model.real || state.fast ? Promise.resolve() : wait(ms);
     let live = null;
-    const res = await runTask(T, parts, model, {
-      onToken(text) {
-        if (!alive()) return;
-        botEl.dataset.face = "think";
-        live ||= line("model", "Model", "");
-        live.lastChild.textContent = text;
-        panes.now.scrollTop = panes.now.scrollHeight;
-      },
-      onContext(msgs) {
-        if (alive()) drawRaw(msgs);
-      },
-      async onStep(e) {
-        if (!alive()) return;
-        if (e.kind === "system") {
-          // what every run starts with, then what each part adds to it
-          const own = {
-            prompt: "from the harness",
-            memory: "from the repository",
-          };
-          const base = e.segs.filter(g => !own[g.by]);
-          line("system", "System", base.map(g => g.text).join("\n\n"));
-          for (const g of e.segs.filter(g => own[g.by])) {
-            await pace(PACE.line);
-            const el = line("part", PARTS[g.by].name, g.text, g.by, own[g.by]);
-            // the part this task is about is shown in full
-            if (g.by === T.gives) el.classList.add("ah-open");
-            ping(g.by);
-            travel(g.by);
-          }
-        } else if (e.kind === "model") {
-          if (live) live.lastChild.textContent = e.text;
-          else line("model", "Model", e.text);
-          live = null;
-          ping("model");
-          blip(500, 0.05, "triangle");
-        } else if (e.kind === "user") line("user", "User", e.text);
-        else if (e.kind === "end") line("end", "Run", e.text);
-        else if (e.kind === "sys") panes.now.append(h("p", "ah-rule", e.text));
-        else if (e.kind === "ask")
-          line("part", PARTS.perms.name, e.text, "perms");
-        else {
-          line(e.kind, PARTS[e.part].name, tidy(e.text), e.part);
-          ping(e.part);
-          travel(e.part);
-          blip(420, 0.05, "triangle");
-        }
-        await pace(PACE.line);
-      },
-      // The player is the user. The run waits for the answer.
-      askUser({ args }) {
-        return new Promise(resolve => {
-          const row = h("div", "ah-askrow");
-          for (const [label, yes] of [
-            ["Allow", true],
-            ["Deny", false],
-          ]) {
-            const b = h("button", `ah-btn${yes ? " ah-run" : ""}`, label);
-            b.type = "button";
-            b.addEventListener("click", () => {
-              row.remove();
-              resolve(yes);
-            });
-            row.append(b);
-          }
-          row.dataset.path = args.path || "";
-          panes.now.append(row);
+    let res;
+    try {
+      res = await runTask(T, parts, model, {
+        alive,
+        onToken(text) {
+          if (!alive()) return;
+          botEl.dataset.face = "think";
+          live ||= line("model", "Model", "");
+          live.lastChild.textContent = text;
           panes.now.scrollTop = panes.now.scrollHeight;
-        });
-      },
-    });
+        },
+        onContext(msgs) {
+          if (alive()) drawRaw(msgs);
+        },
+        async onStep(e) {
+          if (!alive()) return;
+          if (e.kind === "system") {
+            // what every run starts with, then what each part adds to it
+            const own = {
+              prompt: "from the harness",
+              memory: "from the repository",
+            };
+            const base = e.segs.filter(g => !own[g.by]);
+            line("system", "System", base.map(g => g.text).join("\n\n"));
+            for (const g of e.segs.filter(g => own[g.by])) {
+              await pace(PACE.line);
+              const el = line(
+                "part",
+                PARTS[g.by].name,
+                g.text,
+                g.by,
+                own[g.by]
+              );
+              // the part this task is about is shown in full
+              if (g.by === T.gives) el.classList.add("ah-open");
+              ping(g.by);
+              travel(g.by);
+            }
+          } else if (e.kind === "model") {
+            if (live) live.lastChild.textContent = e.text;
+            else line("model", "Model", e.text);
+            live = null;
+            ping("model");
+            blip(500, 0.05, "triangle");
+          } else if (e.kind === "user") line("user", "User", e.text);
+          else if (e.kind === "end") line("end", "Run", e.text);
+          else if (e.kind === "sys")
+            panes.now.append(h("p", "ah-rule", e.text));
+          else if (e.kind === "ask")
+            line("part", PARTS.perms.name, e.text, "perms");
+          else {
+            line(e.kind, PARTS[e.part].name, tidy(e.text), e.part);
+            ping(e.part);
+            travel(e.part);
+            blip(420, 0.05, "triangle");
+          }
+          await pace(PACE.line);
+        },
+        // The player is the user. The run waits for the answer.
+        askUser({ args }) {
+          return new Promise(resolve => {
+            const row = h("div", "ah-askrow");
+            for (const [label, yes] of [
+              ["Allow", true],
+              ["Deny", false],
+            ]) {
+              const b = h("button", `ah-btn${yes ? " ah-run" : ""}`, label);
+              b.type = "button";
+              b.addEventListener("click", () => {
+                row.remove();
+                resolve(yes);
+              });
+              row.append(b);
+            }
+            row.dataset.path = args.path || "";
+            panes.now.append(row);
+            panes.now.scrollTop = panes.now.scrollHeight;
+            // leaving the task answers for the player: no
+            state.unask = () => resolve(false);
+          });
+        },
+      });
+    } catch (e) {
+      if (alive()) line("end", "Run", `The run stopped: ${e.message || e}`);
+    } finally {
+      // whatever happened, the board is usable again
+      state.unask = null;
+      if (alive()) {
+        state.running = false;
+        root.classList.remove("ah-running");
+        runBtn.disabled = false;
+        hintBtn.disabled = false;
+      }
+    }
     if (!alive()) return;
+    if (!res) return draw();
 
     if (res.answer && !res.trace.some(e => e.kind === "end"))
       panes.now.lastChild.classList.add(res.pass ? "ah-good" : "ah-bad");
@@ -698,10 +723,6 @@ export function mountHarness(root) {
     drawEvals(res);
     panes.now.scrollTop = panes.now.scrollHeight;
 
-    state.running = false;
-    root.classList.remove("ah-running");
-    runBtn.disabled = false;
-    hintBtn.disabled = false;
     const usedNew = parts.includes(T.gives);
     if (res.pass || usedNew) {
       if (state.at === state.top && state.top < LAST) state.top++;
@@ -734,7 +755,9 @@ export function mountHarness(root) {
 
   function go(i) {
     if (i < 0 || i > state.top) return;
+    // abandon the run in progress, and any question it was waiting on
     state.runId++;
+    state.unask?.();
     state.running = false;
     root.classList.remove("ah-running");
     runBtn.disabled = false;

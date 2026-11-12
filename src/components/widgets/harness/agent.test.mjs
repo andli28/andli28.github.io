@@ -80,3 +80,97 @@ test("the raw view pairs calls with their results", async () => {
   assert.equal(call.tool_calls[0].name, "read_file");
   assert.equal(result.tool_call_id, call.tool_calls[0].id);
 });
+
+const trail = TASKS.find(t => t.id === "trail");
+const port = TASKS.find(t => t.id === "port");
+
+test("a model error while compacting ends the run instead of throwing", async () => {
+  const inner = standIn();
+  const model = {
+    ...inner,
+    chat(messages, opts) {
+      if (opts.summary) throw new Error("gpu lost");
+      return inner.chat(messages, opts);
+    },
+  };
+  const r = await runTask(trail, ["tools", "compact"], model);
+  assert.equal(r.crashed, true);
+  assert.equal(r.pass, false);
+  assert.match(r.trace.at(-1).text, /Model error: gpu lost/);
+});
+
+test("the summary is not streamed as a reply", async () => {
+  const inner = standIn();
+  let streamed = 0;
+  const model = {
+    ...inner,
+    chat(messages, opts) {
+      if (opts.summary && opts.onToken) streamed++;
+      return inner.chat(messages, { ...opts, onToken: undefined });
+    },
+  };
+  const r = await runTask(trail, ["tools", "compact"], model, {
+    onToken() {},
+  });
+  assert.ok(r.trace.some(e => e.part === "compact"));
+  assert.equal(streamed, 0);
+});
+
+// a model that makes one given call, then answers
+const calls = (tool, args) => {
+  let n = 0;
+  return {
+    name: "t",
+    real: false,
+    chat: async () => ({
+      text: n++ ? "ANSWER: done" : JSON.stringify({ tool, args }),
+      in: 1,
+      out: 1,
+    }),
+  };
+};
+const result = r => r.trace.find(e => /^TOOL RESULT/.test(e.text)).text;
+
+test("a path named like an object method is not a file", async () => {
+  const r = await runTask(
+    port,
+    ["tools", "feedback"],
+    calls("read_file", { path: "constructor" })
+  );
+  assert.match(result(r), /no such file: constructor/);
+  const f = await runTask(
+    port,
+    ["tools", "feedback"],
+    calls("fetch", { url: "toString" })
+  );
+  assert.match(result(f), /could not reach toString/);
+});
+
+test("an empty path or a folder gets no 'did you mean'", async () => {
+  for (const path of ["", "docs/"]) {
+    const r = await runTask(
+      port,
+      ["tools", "feedback"],
+      calls("read_file", { path })
+    );
+    assert.match(result(r), /no such file/);
+    assert.doesNotMatch(result(r), /Did you mean/);
+  }
+});
+
+test("an abandoned run stops before the next model call", async () => {
+  let asked = 0;
+  let on = true;
+  const inner = standIn();
+  const model = {
+    ...inner,
+    chat(messages, opts) {
+      asked++;
+      on = false; // the player leaves during the first turn
+      return inner.chat(messages, opts);
+    },
+  };
+  const r = await runTask(port, ["tools"], model, { alive: () => on });
+  assert.equal(asked, 1);
+  assert.equal(r.done, false);
+});
