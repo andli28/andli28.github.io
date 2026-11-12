@@ -36,17 +36,17 @@ export const PARTS = {
   ),
   prompt: p(
     "context",
-    "Prompt",
-    "Standing instructions for every run.",
-    "A few lines added to the start of every conversation: who the agent is and how things are done here.",
-    "The system prompt."
+    "System prompt",
+    "The harness's standing rules, the same in every repository.",
+    "Lines the harness puts at the start of every conversation, whatever the project: who the agent is, what it must never do, and where to look for project instructions.",
+    "The system prompt. It holds the mechanics a repository owner shouldn't have to write."
   ),
   memory: p(
     "memory",
-    "Memory file",
-    "Project notes, loaded at the start.",
-    "A file in the project, read into the instructions when a run begins. It tells the agent where things live.",
-    "Files like AGENTS.md or CLAUDE.md."
+    "AGENTS.md",
+    "The repository's own instructions, loaded at the start.",
+    "A file kept in the repository and read into the instructions when a run begins. It teaches the agent this codebase: its commands, its layout and its conventions.",
+    "AGENTS.md, CLAUDE.md and the like: context scoped to one repository."
   ),
   history: p(
     "memory",

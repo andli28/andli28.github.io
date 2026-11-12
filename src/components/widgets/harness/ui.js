@@ -3,12 +3,12 @@
 // time. The player runs one, reads the trace, connects the part that
 // appears, and runs it again. Progress lives in localStorage under one key.
 
-import { TASKS, runTask } from "./agent.js";
+import { TASKS, runTask, rawMessages } from "./agent.js";
 import { BRANCHES, PARTS, ORDER } from "./world.js";
 import { modelManager } from "./llm.js";
 import { icon } from "./icons.js";
 
-const KEY = "ah:v4";
+const KEY = "ah:v5";
 const ALL = Object.keys(PARTS);
 const LAST = TASKS.length - 1;
 const REAL = "Qwen 3 0.6B";
@@ -51,6 +51,7 @@ export function mountHarness(root) {
     model: query.get("model") || saved.model || "auto",
     running: false,
     fast: false,
+    raw: false,
     runId: 0,
   };
   const save = () => {
@@ -123,10 +124,38 @@ export function mountHarness(root) {
   const nextBtn = mkRound("fwd", "Next task", () => go(state.at + 1));
   const countEl = h("span", "ah-count");
   pager.append(prevBtn, countEl, nextBtn);
-  const chip = h("button", "ah-modelchip");
+  // The chip is two buttons: the model switch, and what the model is.
+  const chipBox = h("div", "ah-modelchip");
+  const chip = h("button", "ah-chipmain");
   chip.type = "button";
+  const infoBtn = h("button", "ah-chipinfo", icon("info"));
+  infoBtn.type = "button";
+  infoBtn.setAttribute("aria-label", "About the model");
+  infoBtn.setAttribute("aria-expanded", "false");
+  const pop = h(
+    "div",
+    "ah-pop",
+    `<b>${REAL}</b> runs in this browser tab, on your GPU, powered by <a href="https://executorch.ai/" target="_blank" rel="noopener">ExecuTorch</a>. Nothing you do here is sent to a server. The model is about 400 MB and is downloaded once.<br><br>The <b>stand-in</b> is a script that behaves like a small model, for devices that can't run the real one.`
+  );
+  pop.hidden = true;
+  chipBox.append(chip, infoBtn, pop);
   const tools = h("div", "ah-tools");
-  head.append(nameEl, pager, chip, tools);
+  head.append(nameEl, pager, chipBox, tools);
+
+  // One pip per task: where you are, what is cleared, what is still locked.
+  const pips = h("div", "ah-pips");
+  pips.setAttribute("role", "group");
+  pips.setAttribute("aria-label", "Tasks");
+  TASKS.forEach((T, i) => {
+    const b = h("button", `ah-pip ah-c-${PARTS[T.gives].branch}`, "<i></i>");
+    b.type = "button";
+    b.dataset.i = i;
+    pips.append(b);
+  });
+  pips.addEventListener("click", ev => {
+    const b = ev.target.closest(".ah-pip");
+    if (b && !b.disabled) go(+b.dataset.i);
+  });
 
   const askEl = h("p", "ah-ask");
   const tipEl = h("p", "ah-tip");
@@ -158,24 +187,34 @@ export function mountHarness(root) {
   // the trace side
   const side = h("div", "ah-side");
   const sideHead = h("div", "ah-sidehead", `<span>Trace</span>`);
-  const flip = h("div", "ah-flip");
-  flip.hidden = true;
-  const mkFlip = (label, which) => {
+  const mkFlip = (box, label, fn) => {
     const b = h("button", "", label);
     b.type = "button";
-    b.addEventListener("click", () => show(which));
-    flip.append(b);
+    b.addEventListener("click", fn);
+    box.append(b);
     return b;
   };
-  const flipPrev = mkFlip("Last run", "prev");
-  const flipNow = mkFlip("This run", "now");
-  sideHead.append(flip);
+  // the same run two ways: as a story, or as the messages the model is sent
+  const mode = h("div", "ah-flip");
+  const modePretty = mkFlip(mode, "Pretty", () => setRaw(false));
+  const modeRaw = mkFlip(mode, "Raw", () => setRaw(true));
+  const flip = h("div", "ah-flip ah-runs");
+  flip.hidden = true;
+  const flipPrev = mkFlip(flip, "Last run", () => show("prev"));
+  const flipNow = mkFlip(flip, "This run", () => show("now"));
+  sideHead.append(mode, flip);
   const panes = { prev: h("div", "ah-trace"), now: h("div", "ah-trace") };
-  for (const p of Object.values(panes)) {
+  const raws = {
+    prev: h("div", "ah-trace ah-raw"),
+    now: h("div", "ah-trace ah-raw"),
+  };
+  for (const p of [...Object.values(panes), ...Object.values(raws)]) {
     p.setAttribute("role", "log");
     p.tabIndex = 0;
+    p.addEventListener("click", ev =>
+      ev.target.closest(".ah-fold")?.classList.toggle("ah-open")
+    );
   }
-  panes.prev.hidden = true;
   const actions = h("div", "ah-actions");
   const mkBtn = (cls, ic, label) => {
     const b = h("button", `ah-btn ${cls}`, `${icon(ic)}<span>${label}</span>`);
@@ -191,12 +230,20 @@ export function mountHarness(root) {
   const evalsEl = h("ul", "ah-evals");
   evalsBox.append(evalsHead, evalsEl);
   const graded = { prev: null, now: null };
-  side.append(sideHead, panes.prev, panes.now, evalsBox, actions);
+  side.append(
+    sideHead,
+    panes.prev,
+    panes.now,
+    raws.prev,
+    raws.now,
+    evalsBox,
+    actions
+  );
   board.append(map, side);
 
   const overlay = h("div", "ah-overlay");
   overlay.hidden = true;
-  wrap.append(head, top, board);
+  wrap.append(head, pips, top, board);
   root.append(wrap, overlay);
 
   const notesBtn = mkRound("book", "Field notes", () => showNotes());
@@ -214,18 +261,27 @@ export function mountHarness(root) {
   syncSound();
 
   // ---------- the model ----------
+  const mb = n => Math.floor(n / 1e6);
   function syncChip(s) {
-    const pct = Math.round(s.progress * 100);
     // [wide screens, phones]
     const [long, short] =
-      s.state === "loading"
-        ? [`${REAL} · ${pct}%`, `Qwen ${pct}%`]
-        : s.state === "real"
-          ? [REAL, "Qwen"]
-          : ["Stand-in model", "Stand-in"];
+      s.state === "real"
+        ? [REAL, "Qwen"]
+        : s.state !== "loading"
+          ? ["Stand-in model", "Stand-in"]
+          : s.stage === "download"
+            ? [
+                `Downloading ${REAL} · ${mb(s.loaded)} / ${mb(s.total)} MB`,
+                `${mb(s.loaded)} / ${mb(s.total)} MB`,
+              ]
+            : s.stage === "gpu"
+              ? ["Loading onto the GPU…", "Loading…"]
+              : s.stage === "cache"
+                ? ["Loading from cache…", "Loading…"]
+                : [`Starting ${REAL}…`, "Starting…"];
     chip.innerHTML = `<i></i><span class="ah-long">${long}</span><span class="ah-short">${short}</span>`;
     chip.setAttribute("aria-label", long);
-    chip.dataset.state = s.state;
+    chipBox.dataset.state = s.state;
     chip.setAttribute("aria-pressed", String(s.state === "real"));
     chip.title =
       s.state === "real"
@@ -241,6 +297,14 @@ export function mountHarness(root) {
   chip.addEventListener("click", () => {
     state.model = models.toggle();
     save();
+  });
+  const setPop = open => {
+    pop.hidden = !open;
+    infoBtn.setAttribute("aria-expanded", String(open));
+  };
+  infoBtn.addEventListener("click", () => setPop(pop.hidden));
+  document.addEventListener("click", ev => {
+    if (!pop.hidden && !chipBox.contains(ev.target)) setPop(false);
   });
 
   // ---------- drawing ----------
@@ -264,6 +328,20 @@ export function mountHarness(root) {
     countEl.textContent = `${state.at + 1} / ${TASKS.length}`;
     prevBtn.disabled = state.at === 0;
     nextBtn.disabled = state.at >= state.top;
+    [...pips.children].forEach((b, i) => {
+      const T2 = TASKS[i];
+      const st = state.done[T2.id]
+        ? "done"
+        : i <= state.top
+          ? "open"
+          : "locked";
+      b.dataset.state = st;
+      b.disabled = st === "locked";
+      b.setAttribute("aria-current", String(i === state.at));
+      const label = `${i + 1}. ${T2.name}${st === "done" ? " (cleared)" : st === "locked" ? " (locked)" : ""}`;
+      b.title = label;
+      b.setAttribute("aria-label", label);
+    });
     askEl.textContent = `“${[].concat(T.ask).join(" … ")}”`;
 
     for (const b of BRANCHES) {
@@ -352,15 +430,46 @@ export function mountHarness(root) {
   }
 
   // ---------- the trace ----------
-  function show(which) {
-    panes.prev.hidden = which !== "prev";
-    panes.now.hidden = which !== "now";
+  let shown = "now";
+  function show(which = shown) {
+    shown = which;
+    for (const k of ["prev", "now"]) {
+      panes[k].hidden = k !== which || state.raw;
+      raws[k].hidden = k !== which || !state.raw;
+    }
     flipPrev.setAttribute("aria-pressed", String(which === "prev"));
     flipNow.setAttribute("aria-pressed", String(which === "now"));
+    modePretty.setAttribute("aria-pressed", String(!state.raw));
+    modeRaw.setAttribute("aria-pressed", String(state.raw));
     drawEvals(graded[which]);
+  }
+  function setRaw(on) {
+    state.raw = on;
+    show();
+  }
+  // The raw view: the message array as the model is sent it, one message a
+  // line, redrawn whenever the harness changes it.
+  const esc = t =>
+    t.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+  function drawRaw(msgs) {
+    const rows = rawMessages(msgs).map(m => {
+      const json = esc(JSON.stringify(m, null, 1).replace(/\n\s*/g, " "))
+        .replace(
+          /"(role|content|tool_calls|tool_call_id|id|name|args)":/g,
+          '<span class="ah-jk">"$1"</span>:'
+        )
+        .replace(
+          /(<span class="ah-jk">"role"<\/span>: )"(\w+)"/,
+          '$1<span class="ah-jr ah-jr-$2">"$2"</span>'
+        );
+      return `<div class="ah-msg${json.length > 420 ? " ah-fold" : ""}"><span>${json},</span></div>`;
+    });
+    raws.now.innerHTML = `<div class="ah-msg">[</div>${rows.join("")}<div class="ah-msg">]</div><p class="ah-rawnote">The messages the model is sent on its next turn. Qwen receives them as ChatML text.</p>`;
+    raws.now.scrollTop = raws.now.scrollHeight;
   }
   function idleTrace() {
     panes.now.innerHTML = `<p class="ah-idle">Nothing has run yet. Press Run and every step the model and the harness take is listed here.</p>`;
+    raws.now.innerHTML = `<p class="ah-idle">Nothing has run yet. Press Run and the messages sent to the model are listed here as JSON.</p>`;
     graded.now = graded.prev = null;
     drawEvals(null);
   }
@@ -389,8 +498,8 @@ export function mountHarness(root) {
   const tidy = text =>
     text
       .replace(/^TOOL RESULT( \(error\))?: /, "")
-      .replace(/\n\(If that is enough[^)]*\)$/, "");
-  function line(kind, who, text, part) {
+      .replace(/\n\((If that is enough|That call failed)[^)]*\)$/, "");
+  function line(kind, who, text, part, tag) {
     const P = PARTS[part];
     const e = h(
       "div",
@@ -398,7 +507,8 @@ export function mountHarness(root) {
       `<b>${P ? icon(part) : ""}${who}</b><span></span>`
     );
     e.lastChild.textContent = text;
-    if (kind === "tool" && text.length > 140) {
+    if (tag) e.lastChild.prepend(h("em", "ah-tag", tag));
+    if ((kind === "tool" || kind === "system" || tag) && text.length > 140) {
       e.classList.add("ah-fold");
       e.lastChild.title = "Tap to open";
     }
@@ -406,12 +516,6 @@ export function mountHarness(root) {
     panes.now.scrollTop = panes.now.scrollHeight;
     return e;
   }
-  panes.now.addEventListener("click", ev =>
-    ev.target.closest(".ah-fold")?.classList.toggle("ah-open")
-  );
-  panes.prev.addEventListener("click", ev =>
-    ev.target.closest(".ah-fold")?.classList.toggle("ah-open")
-  );
 
   // ---------- parts ----------
   function toggle(id) {
@@ -468,6 +572,7 @@ export function mountHarness(root) {
       if (ev.key === "Escape") closeOverlay();
       return;
     }
+    if (ev.key === "Escape") setPop(false);
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
     if (ev.key === "r" || ev.key === "R") runBtn.click();
   };
@@ -494,10 +599,12 @@ export function mountHarness(root) {
     // keep the last run to read against this one
     if (panes.now.querySelector(".ah-line")) {
       panes.prev.innerHTML = panes.now.innerHTML;
+      raws.prev.innerHTML = raws.now.innerHTML;
       graded.prev = graded.now;
       flip.hidden = false;
     }
     panes.now.innerHTML = "";
+    raws.now.innerHTML = "";
     graded.now = null;
     show("now");
     const withEl = h(
@@ -521,9 +628,28 @@ export function mountHarness(root) {
         live.lastChild.textContent = text;
         panes.now.scrollTop = panes.now.scrollHeight;
       },
+      onContext(msgs) {
+        if (alive()) drawRaw(msgs);
+      },
       async onStep(e) {
         if (!alive()) return;
-        if (e.kind === "model") {
+        if (e.kind === "system") {
+          // what every run starts with, then what each part adds to it
+          const own = {
+            prompt: "from the harness",
+            memory: "from the repository",
+          };
+          const base = e.segs.filter(g => !own[g.by]);
+          line("system", "System", base.map(g => g.text).join("\n\n"));
+          for (const g of e.segs.filter(g => own[g.by])) {
+            await pace(PACE.line);
+            const el = line("part", PARTS[g.by].name, g.text, g.by, own[g.by]);
+            // the part this task is about is shown in full
+            if (g.by === T.gives) el.classList.add("ah-open");
+            ping(g.by);
+            travel(g.by);
+          }
+        } else if (e.kind === "model") {
           if (live) live.lastChild.textContent = e.text;
           else line("model", "Model", e.text);
           live = null;
@@ -616,6 +742,7 @@ export function mountHarness(root) {
     state.at = i;
     botEl.dataset.face = "idle";
     panes.prev.innerHTML = "";
+    raws.prev.innerHTML = "";
     flip.hidden = true;
     show("now");
     save();

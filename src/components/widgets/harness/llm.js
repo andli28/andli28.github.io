@@ -38,6 +38,9 @@ function decide(messages, task, { summary, stage = 0 }) {
     return `ANSWER: ${f.needs.test(all) ? f.answer : f.lost}`;
   }
 
+  // told plainly not to, it doesn't
+  if (task.refuse?.when.test(sys)) return `ANSWER: ${task.refuse.say}`;
+
   // a small model does what the page says, unless the text is fenced off
   const hostile = heard.some(
     m => /IGNORE PREVIOUS INSTRUCTIONS/.test(m) && !/<untrusted>/.test(m)
@@ -112,6 +115,8 @@ export async function canAutoload(nav = globalThis.navigator) {
     return "mobile";
   if (nav.deviceMemory != null && nav.deviceMemory < 8) return "low-memory";
   if (nav.connection?.saveData) return "save-data";
+  if (/^(slow-2g|2g|3g)$/.test(nav.connection?.effectiveType || ""))
+    return "slow-network";
   try {
     const { quota = Infinity, usage = 0 } =
       (await nav.storage?.estimate?.()) ?? {};
@@ -126,13 +131,20 @@ export async function canAutoload(nav = globalThis.navigator) {
 /**
  * Chooses and loads the model. `want` is the saved preference: "auto" (decide
  * from the device), "on" or "off". onChange is called with the new status:
- *   { state: "standin" | "loading" | "real" | "failed", progress, why }
+ *   { state: "standin" | "loading" | "real" | "failed", why,
+ *     stage: "download" | "cache" | "gpu", loaded, total }   (bytes)
  */
 export function modelManager({ want = "auto", onChange = () => {} } = {}) {
   const fallback = standIn();
   let real = null;
   let loading = null;
-  const status = { state: "standin", progress: 0, why: "" };
+  const status = {
+    state: "standin",
+    why: "",
+    stage: "",
+    loaded: 0,
+    total: 0,
+  };
   const set = patch => {
     Object.assign(status, patch);
     onChange({ ...status });
@@ -140,9 +152,13 @@ export function modelManager({ want = "auto", onChange = () => {} } = {}) {
 
   function load() {
     if (real || loading) return loading;
-    set({ state: "loading", progress: 0, why: "" });
+    set({ state: "loading", stage: "", loaded: 0, total: 0, why: "" });
     loading = import("./executorch.js")
-      .then(m => m.executorch(f => set({ progress: f })))
+      .then(m =>
+        m.executorch(p =>
+          set({ stage: p.stage, loaded: p.loaded, total: p.total })
+        )
+      )
       .then(m => {
         real = m;
         if (status.state === "loading") set({ state: "real" });
@@ -165,6 +181,12 @@ export function modelManager({ want = "auto", onChange = () => {} } = {}) {
     status: () => ({ ...status }),
     current: () => (status.state === "real" && real ? real : fallback),
     // Tapping the chip: real → stand-in, anything else → try the real one.
+    // Switching to the stand-in keeps the model loaded, so switching back is
+    // instant; the browser frees it when the tab closes. While loaded it
+    // holds roughly 2.4 GB of GPU memory: 400 MB of weights plus a key-value
+    // cache of about 2 GB (fp32) sized by the .pte's 8960-token context. The
+    // game never passes LIMIT = 1500 tokens, so the way to cut that is to
+    // re-export the model with max_seq_len near 2048, not to unload it.
     toggle() {
       if (status.state === "real" || status.state === "loading") {
         set({ state: "standin", why: "off" });

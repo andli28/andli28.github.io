@@ -558,25 +558,68 @@
     rotate: 6deg;
   }
   /* ---- the model chip ---- */
-  .ah .ah-modelchip {
+  .ah-modelchip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    height: 32px;
+    border-radius: 16px;
+    background: var(--ah-tile);
+    box-shadow: 0 2px 0 var(--ah-edge);
+    color: var(--ah-mute);
+  }
+  .ah .ah-chipmain {
     display: inline-flex;
     align-items: center;
     gap: 7px;
     height: 32px;
-    padding: 0 12px 0 10px;
-    border-radius: 16px;
-    background: var(--ah-tile);
-    box-shadow: 0 2px 0 var(--ah-edge);
+    padding: 0 4px 0 10px;
+    border-radius: 16px 0 0 16px;
     font-size: 12.5px;
     font-weight: 700;
-    color: var(--ah-mute);
+    color: inherit;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+  }
+  .ah .ah-chipinfo {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 32px;
+    border-radius: 0 16px 16px 0;
+    color: var(--ah-mute);
+  }
+  .ah-chipinfo .ah-i {
+    width: 16px;
+    height: 16px;
+  }
+  .ah-pop {
+    position: absolute;
+    z-index: 30;
+    top: calc(100% + 8px);
+    right: 0;
+    width: min(300px, calc(100vw - 24px));
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: var(--ah-card);
+    box-shadow:
+      0 0 0 1.5px var(--ah-edge),
+      0 10px 30px rgb(0 0 0 / 0.18);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--ah-ink);
+    white-space: normal;
+  }
+  .ah-pop a {
+    color: var(--ah-accent);
+    font-weight: 800;
+    text-decoration: underline;
   }
   .ah-short {
     display: none;
   }
-  .ah-modelchip i {
+  .ah-chipmain i {
     width: 8px;
     height: 8px;
     border-radius: 50%;
@@ -594,6 +637,51 @@
   }
   .ah-modelchip[data-state="failed"] i {
     background: var(--ah-red);
+  }
+
+  /* ---- the task pips ---- */
+  .ah-pips {
+    display: flex;
+    gap: 4px;
+  }
+  .ah .ah-pip {
+    flex: 1;
+    min-width: 0;
+    height: 28px;
+    display: grid;
+    align-items: center;
+    border-radius: 6px;
+  }
+  .ah-pip i {
+    display: block;
+    height: 8px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--ah-edge) 45%, transparent);
+    transition:
+      background 200ms var(--ah-ease),
+      height 200ms var(--ah-ease);
+  }
+  .ah-pip[data-state="open"] i {
+    background: color-mix(in srgb, var(--c) 30%, var(--ah-tile));
+    box-shadow: inset 0 0 0 1.5px var(--c);
+  }
+  .ah-pip[data-state="done"] i {
+    background: var(--c);
+  }
+  .ah-pip[aria-current="true"] i {
+    height: 14px;
+    border-radius: 7px;
+    outline: 2px solid var(--ah-ink);
+    outline-offset: 2px;
+  }
+  .ah-pip:disabled {
+    cursor: default;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .ah-pip:not(:disabled):hover i {
+      height: 14px;
+      border-radius: 7px;
+    }
   }
   @keyframes ah-blink {
     50% {
@@ -614,7 +702,6 @@
   .ah-sidehead {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     min-height: 28px;
     margin-bottom: 6px;
     font-size: 11px;
@@ -622,6 +709,15 @@
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--ah-mute);
+  }
+  .ah-sidehead .ah-runs {
+    margin-left: auto;
+  }
+  .ah-sidehead > span {
+    margin-right: 10px;
+  }
+  .ah-flip[hidden] {
+    display: none;
   }
   .ah-flip {
     display: flex;
@@ -710,6 +806,80 @@
   }
   .ah-k-user span {
     font-weight: 700;
+  }
+  .ah-k-system span {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ah-mute);
+  }
+  .ah-k-part:has(.ah-tag) span {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .ah-tag {
+    display: block;
+    margin-bottom: 2px;
+    font-family: var(--ah-font, inherit);
+    font-size: 10.5px;
+    font-style: normal;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--c);
+  }
+  .ah-fold:not(.ah-open):has(.ah-tag) span {
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+  }
+  /* the raw view */
+  .ah-raw {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    line-height: 1.45;
+  }
+  .ah-msg {
+    padding: 2px 0 2px 12px;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    color: var(--ah-mute);
+  }
+  .ah-msg:first-child,
+  .ah-msg:nth-last-child(2) {
+    padding-left: 0;
+  }
+  .ah-msg.ah-fold:not(.ah-open) {
+    max-height: 6em;
+    overflow: hidden;
+    mask-image: linear-gradient(#000 60%, transparent);
+  }
+  .ah-msg.ah-fold:not(.ah-open) span {
+    display: inline;
+  }
+  .ah-jk {
+    color: var(--ah-ink);
+    font-weight: 700;
+  }
+  .ah-jr {
+    font-weight: 800;
+    color: var(--ah-accent);
+  }
+  .ah-jr-system {
+    color: var(--ah-blue);
+  }
+  .ah-jr-user {
+    color: var(--ah-ink);
+  }
+  .ah-jr-tool {
+    color: var(--ah-green);
+  }
+  .ah-rawnote {
+    margin: 8px 0 0;
+    font-family: var(--ah-font, inherit);
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--ah-mute);
   }
   .ah-k-part {
     margin: 1px -6px;
@@ -1059,9 +1229,15 @@
     .ah-short {
       display: inline !important;
     }
-    .ah .ah-modelchip {
-      padding: 0 9px 0 8px;
+    .ah .ah-chipmain {
+      padding: 0 2px 0 8px;
       font-size: 11.5px;
+    }
+    .ah-pips {
+      gap: 3px;
+    }
+    .ah .ah-pip {
+      height: 32px;
     }
     .ah-tip {
       min-height: 2.8em;
