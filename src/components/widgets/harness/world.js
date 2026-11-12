@@ -55,12 +55,19 @@ export const PARTS = {
     "A model call remembers nothing. With this on, the harness re-sends the whole conversation with each new message.",
     "Conversation state. The model is stateless; the harness is what remembers."
   ),
+  notes: p(
+    "memory",
+    "Notes file",
+    "A file that outlives the session.",
+    "The agent is told it has a notes file and to save what matters there. At the start of each session the harness reads the file back into the instructions.",
+    "The filesystem as durable storage: notes, plans and work in progress that persist between sessions."
+  ),
   check: p(
     "verify",
     "Check",
     "No answering without looking first.",
     "If the model answers without having used a tool, the harness sends it back to verify before the answer is accepted.",
-    "Verification loops and stop hooks."
+    "Self-verification. Without it agents declare success on work they never checked."
   ),
   trim: p(
     "context",
@@ -74,7 +81,7 @@ export const PARTS = {
     "Compaction",
     "Fold old steps into a summary.",
     "When the conversation passes 60% of the limit, the model is asked to summarise the older steps. The summary replaces them; the task stays word for word.",
-    "Auto-compaction."
+    "Context compaction, the usual answer to context rot."
   ),
   shield: p(
     "guard",
@@ -88,7 +95,7 @@ export const PARTS = {
     "Permissions",
     "Ask you before it changes a file.",
     "Before a tool that writes, the harness stops and asks the user. You answer in the trace.",
-    "Permission prompts and allow / ask / deny rules."
+    "Human-in-the-loop approval before actions that can't be undone."
   ),
   sandbox: p(
     "guard",
@@ -109,7 +116,7 @@ export const PARTS = {
     "Skills",
     "Tool manuals, opened only when needed.",
     "Only the tool names go in the instructions. The model asks for a tool's manual when it wants to use it.",
-    "Skills and tool search: progressive disclosure."
+    "Skills and tool search: progressive disclosure, the answer to tool overload."
   ),
 };
 
@@ -117,7 +124,7 @@ export const ORDER = {
   context: ["prompt", "trim", "compact", "skills"],
   action: ["tools"],
   guard: ["shield", "perms", "sandbox"],
-  memory: ["history", "memory"],
+  memory: ["history", "notes", "memory"],
   verify: ["check"],
   control: ["feedback", "stop"],
 };

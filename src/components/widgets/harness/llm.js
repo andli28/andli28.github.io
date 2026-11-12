@@ -35,7 +35,7 @@ function decide(messages, task, { summary, stage = 0 }) {
   // a follow-up only makes sense if the earlier exchange is still there
   if (stage > 0) {
     const f = task.follow[stage - 1];
-    return `ANSWER: ${f.needs.test(seen) ? f.answer : f.lost}`;
+    return `ANSWER: ${f.needs.test(all) ? f.answer : f.lost}`;
   }
 
   // a small model does what the page says, unless the text is fenced off

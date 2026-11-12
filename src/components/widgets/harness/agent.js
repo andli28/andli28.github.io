@@ -258,6 +258,44 @@ export const TASKS = [
     ],
   },
   {
+    id: "keep",
+    name: "Next day",
+    gives: "notes",
+    sol: ["tools", "notes"],
+    sessions: true,
+    ask: [
+      "The door code is 7391. Remember it for me.",
+      "What was the door code I gave you?",
+    ],
+    evals: [
+      {
+        label: "Wrote the code down",
+        test: r => /7391/.test(saved(r.world) || ""),
+      },
+      {
+        label: "Next day's answer is 7391",
+        test: r => /7391/.test(r.answers[1] || ""),
+      },
+    ],
+    guess: "Got it, I'll remember.",
+    plan: [
+      {
+        tool: "write_file",
+        args: { path: "notes.md", content: "door code: 7391" },
+        want: /TOOL RESULT[^\n]*(wrote|denied)[^\n]*notes\.md/,
+        knows: /notes\.md/,
+      },
+    ],
+    answer: () => "Saved. The door code is 7391.",
+    follow: [
+      {
+        needs: /door code: 7391/,
+        answer: "The door code is 7391.",
+        lost: "I don't have a door code. This is the first I've heard of one.",
+      },
+    ],
+  },
+  {
     id: "sum",
     name: "Sure of itself",
     gives: "check",
@@ -416,11 +454,16 @@ When you know the final answer, give it with the answer tool, like:
 const HOUSE =
   "House rules:\n- Always give a server address in full, like tern://localhost:1234.\n- Keep answers to one short line.";
 
+const saved = world => world.scratch["notes.md"] ?? world.files["notes.md"];
+
 function systemPrompt(h, task, world) {
   const extra =
     (h.prompt ? `\n\n${HOUSE}` : "") +
     (h.memory
       ? `\n\nProject notes (AGENTS.md):\n${world.files["AGENTS.md"]}`
+      : "") +
+    (h.notes
+      ? `\n\nYou have a notes file, notes.md, that is kept between sessions. When the user asks you to remember something, save it there with write_file before you answer.${saved(world) ? `\nYour notes so far:\n${saved(world)}` : ""}`
       : "");
   if (!h.tools) return `Answer the user's question in one short line.${extra}`;
   const box = toolbox(task);
@@ -487,7 +530,6 @@ export async function runTask(task, parts, model, io = {}) {
   const box = toolbox(task);
   const limit = task.limit || LIMIT;
   const asks = Array.isArray(task.ask) ? task.ask : [task.ask];
-  const sys = systemPrompt(h, task, world);
   const trace = [];
   const r = {
     trace,
@@ -517,19 +559,38 @@ export async function runTask(task, parts, model, io = {}) {
   };
 
   if (h.prompt)
-    await note("part", "house rules added to the instructions", "prompt");
+    await note(
+      "part",
+      "put at the top of every run: “Always give a server address in full, like tern://localhost:1234.”",
+      "prompt"
+    );
   if (h.memory)
-    await note("part", "AGENTS.md loaded into the instructions", "memory");
+    await note(
+      "part",
+      "read the project's AGENTS.md into the instructions: “What changed in each release is written in docs/changes-2.4.md…”",
+      "memory"
+    );
 
-  let msgs = [{ role: "system", content: sys }];
+  let msgs = [{ role: "system", content: systemPrompt(h, task, world) }];
   const size = () => msgs.reduce((n, m) => n + est(m.content) + 4, 0);
   const say = (role, content) => msgs.push({ role, content });
 
   // One user message, worked until it is answered. Returns false if the run
   // died on the way.
   async function exchange(ask, stage) {
+    if (stage > 0 && task.sessions) {
+      // a new session: an empty conversation, and whatever is on disk
+      msgs = [{ role: "system", content: systemPrompt(h, task, world) }];
+      await note("sys", "Next day. A new session, starting from nothing.");
+      if (h.notes && saved(world))
+        await note(
+          "part",
+          `notes.md read into the instructions: “${saved(world).slice(0, 80)}”`,
+          "notes"
+        );
+    }
     await note("user", ask);
-    if (stage > 0) {
+    if (stage > 0 && !task.sessions) {
       if (h.history)
         await note(
           "part",
@@ -538,7 +599,7 @@ export async function runTask(task, parts, model, io = {}) {
         );
       else {
         msgs = [msgs[0]];
-        await note("end", "A new message. Nothing from before goes with it.");
+        await note("sys", "A new message. Nothing from before goes with it.");
       }
     }
     const pin = msgs.length;

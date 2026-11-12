@@ -71,6 +71,7 @@ const P = {
 
 P.feedback = P.catch;
 P.history = P.convo;
+P.notes = P.note;
 
 const FILLED = new Set(["heart", "star", "play", "cache", "bolt", "zap"]);
 

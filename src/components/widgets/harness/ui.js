@@ -185,7 +185,13 @@ export function mountHarness(root) {
   };
   const hintBtn = mkBtn("", "bulb", "Hint");
   const runBtn = mkBtn("ah-run", "play", "Run");
-  side.append(sideHead, panes.prev, panes.now, actions);
+  // the evals have a box of their own, under the trace
+  const evalsBox = h("div", "ah-evalsbox");
+  const evalsHead = h("div", "ah-sidehead");
+  const evalsEl = h("ul", "ah-evals");
+  evalsBox.append(evalsHead, evalsEl);
+  const graded = { prev: null, now: null };
+  side.append(sideHead, panes.prev, panes.now, evalsBox, actions);
   board.append(map, side);
 
   const overlay = h("div", "ah-overlay");
@@ -351,25 +357,34 @@ export function mountHarness(root) {
     panes.now.hidden = which !== "now";
     flipPrev.setAttribute("aria-pressed", String(which === "prev"));
     flipNow.setAttribute("aria-pressed", String(which === "now"));
+    drawEvals(graded[which]);
   }
   function idleTrace() {
-    const T = task();
-    panes.now.innerHTML = `<p class="ah-idle">Press Run. Everything the model and the harness do shows up here, and then gets graded:</p>`;
-    panes.now.append(evalList(T.evals.map(e => ({ label: e.label }))));
+    panes.now.innerHTML = `<p class="ah-idle">Nothing has run yet. Press Run and every step the model and the harness take is listed here.</p>`;
+    graded.now = graded.prev = null;
+    drawEvals(null);
   }
-  function evalList(evals) {
-    const ul = h("ul", "ah-evals");
-    for (const e of evals) {
-      const state = e.ok == null ? "todo" : e.ok ? "ok" : "no";
-      ul.append(
+  // The checks for this task: open circles before a run, ticks and crosses
+  // after one.
+  function drawEvals(res) {
+    const list = res ? res.evals : task().evals;
+    const passed = res ? res.evals.filter(e => e.ok).length : 0;
+    evalsHead.innerHTML = `<span>Evals</span><span class="ah-evalmeta">${
+      res
+        ? `${passed} of ${list.length} pass · ${res.turns} turns · ${res.tokens} tokens`
+        : "how the run will be graded"
+    }</span>`;
+    evalsEl.innerHTML = "";
+    for (const e of list) {
+      const st = !res ? "todo" : e.ok ? "ok" : "no";
+      evalsEl.append(
         h(
           "li",
-          `ah-e-${state}`,
-          `${icon(e.ok === false ? "x" : "check")}<span>${e.label}</span>`
+          `ah-e-${st}`,
+          `${st === "todo" ? "<i></i>" : icon(st === "ok" ? "check" : "x")}<span>${e.label}</span>`
         )
       );
     }
-    return ul;
   }
   const tidy = text =>
     text
@@ -479,9 +494,11 @@ export function mountHarness(root) {
     // keep the last run to read against this one
     if (panes.now.querySelector(".ah-line")) {
       panes.prev.innerHTML = panes.now.innerHTML;
+      graded.prev = graded.now;
       flip.hidden = false;
     }
     panes.now.innerHTML = "";
+    graded.now = null;
     show("now");
     const withEl = h(
       "p",
@@ -514,6 +531,7 @@ export function mountHarness(root) {
           blip(500, 0.05, "triangle");
         } else if (e.kind === "user") line("user", "User", e.text);
         else if (e.kind === "end") line("end", "Run", e.text);
+        else if (e.kind === "sys") panes.now.append(h("p", "ah-rule", e.text));
         else if (e.kind === "ask")
           line("part", PARTS.perms.name, e.text, "perms");
         else {
@@ -550,14 +568,8 @@ export function mountHarness(root) {
 
     if (res.answer && !res.trace.some(e => e.kind === "end"))
       panes.now.lastChild.classList.add(res.pass ? "ah-good" : "ah-bad");
-    panes.now.append(
-      h(
-        "p",
-        "ah-evalhead",
-        `Evals · ${res.turns} turns · ${res.tokens} tokens`
-      ),
-      evalList(res.evals)
-    );
+    graded.now = res;
+    drawEvals(res);
     panes.now.scrollTop = panes.now.scrollHeight;
 
     state.running = false;
