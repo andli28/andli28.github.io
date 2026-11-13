@@ -3,18 +3,32 @@
 // time. The player runs one, reads the trace, connects the part that
 // appears, and runs it again. Progress lives in localStorage under one key.
 
-import { TASKS, runTask, rawMessages, diagnose, tested } from "./agent.js";
+import {
+  TASKS,
+  runTask,
+  rawMessages,
+  diagnose,
+  tested,
+  parseReply,
+} from "./agent.js";
 import { BRANCHES, PARTS, ORDER } from "./world.js";
-import { modelManager, REAL as MODEL } from "./llm.js";
+import { modelManager, typing, REAL as MODEL } from "./llm.js";
 import { icon } from "./icons.js";
 
 const KEY = "ah:v6";
 const ALL = Object.keys(PARTS);
 const LAST = TASKS.length - 1;
 const REAL = MODEL.name;
-// How long each trace line holds when the stand-in is driving, in ms. The
-// real model sets its own pace.
-const PACE = { line: 420, signal: 380 };
+// How long each trace line holds, and how long a signal takes to cross a
+// wire, in ms at 1× speed.
+const PACE = { line: 950, signal: 680, type: 34 };
+// Which way a harness step travels: out from the model, in to it, or both.
+const FLOW = {
+  feedback: ["out", "in"],
+  check: ["out", "in"],
+  stop: ["out", "in"],
+  sandbox: ["out"],
+};
 
 const h = (tag, cls, html) => {
   const e = document.createElement(tag);
@@ -56,6 +70,7 @@ export function mountHarness(root) {
     top: everything ? LAST : Math.min(saved.top || 0, LAST),
     at: Math.min(saved.at || 0, LAST),
     sound: !!saved.sound,
+    speed: saved.speed === 2 ? 2 : 1,
     model: query.get("model") || saved.model || "auto",
     running: false,
     fast: false,
@@ -73,6 +88,7 @@ export function mountHarness(root) {
           top: state.top,
           at: state.at,
           sound: state.sound,
+          speed: state.speed,
           model: state.model,
         })
       );
@@ -239,6 +255,23 @@ export function mountHarness(root) {
   };
   const hintBtn = mkBtn("", "bulb", "Hint");
   const runBtn = mkBtn("ah-run", "play", "Run");
+  const speedBtn = h("button", "ah-btn ah-speed");
+  speedBtn.type = "button";
+  const syncSpeed = () => {
+    speedBtn.textContent = `${state.speed}×`;
+    speedBtn.title = speedBtn.ariaLabel =
+      state.speed === 1
+        ? "Speed: normal. Tap for double speed."
+        : "Speed: double. Tap for normal speed.";
+  };
+  speedBtn.addEventListener("click", () => {
+    state.speed = state.speed === 1 ? 2 : 1;
+    save();
+    syncSpeed();
+  });
+  syncSpeed();
+  actions.append(speedBtn);
+  typing.ms = () => (state.fast || reduced() ? 0 : PACE.type / state.speed);
   // the evals have a box of their own, under the trace
   const evalsBox = h("div", "ah-evalsbox");
   const evalsHead = h("div", "ah-sidehead");
@@ -268,7 +301,8 @@ export function mountHarness(root) {
     syncSound();
     blip(660);
   });
-  tools.append(notesBtn, soundBtn);
+  const trophyBtn = mkRound("trophy", "What you built", () => showFinale());
+  tools.append(trophyBtn, notesBtn, soundBtn);
   const syncSound = () => {
     soundBtn.innerHTML = icon(state.sound ? "sound" : "mute");
     soundBtn.setAttribute("aria-pressed", String(state.sound));
@@ -339,6 +373,7 @@ export function mountHarness(root) {
 
   function draw() {
     const T = task();
+    trophyBtn.hidden = !TASKS.every(T2 => state.done[T2.id]);
     prevBtn.disabled = state.at === 0;
     nextBtn.disabled = state.at >= state.top;
     [...pips.children].forEach((b, i) => {
@@ -388,27 +423,41 @@ export function mountHarness(root) {
     };
   };
 
-  // One arrow per branch that has something connected. Each end stops at the
-  // edge of its box.
+  // One wire per section on the board, from its panel to the model: solid
+  // when something in it is connected, dashed when nothing is. Each is a
+  // gentle curve with a port at both ends; `geo` keeps the curve so signals
+  // can travel along it.
+  const geo = {};
   function drawWires() {
     const m = map.getBoundingClientRect();
     wires.setAttribute("viewBox", `0 0 ${m.width} ${m.height}`);
     const to = centre(modelEl);
     let out = "";
     for (const b of BRANCHES) {
-      if (!ORDER[b.id].some(id => owns(id) && isOn(id))) continue;
+      delete geo[b.id];
+      if (!ORDER[b.id].some(owns)) continue;
+      const live = ORDER[b.id].some(id => owns(id) && isOn(id));
       const from = centre(branchEls[b.id]);
       const dx = to.x - from.x;
       const dy = to.y - from.y;
       const edge = box =>
         Math.min(
-          dx ? (box.w / 2 + 3) / Math.abs(dx) : Infinity,
-          dy ? (box.h / 2 + 3) / Math.abs(dy) : Infinity
+          dx ? (box.w / 2 + 5) / Math.abs(dx) : Infinity,
+          dy ? (box.h / 2 + 5) / Math.abs(dy) : Infinity
         );
       const t1 = edge(from);
       const t2 = edge(to);
       if (t1 + t2 >= 1) continue;
-      out += `<line class="ah-wire ah-w-${b.id}" x1="${from.x + dx * t1}" y1="${from.y + dy * t1}" x2="${to.x - dx * t2}" y2="${to.y - dy * t2}"/>`;
+      const p0 = { x: from.x + dx * t1, y: from.y + dy * t1 };
+      const p1 = { x: to.x - dx * t2, y: to.y - dy * t2 };
+      // bow the line a little, always to the same side
+      const bend = dx && dy ? 0.14 : 0;
+      const c = {
+        x: (p0.x + p1.x) / 2 - (p1.y - p0.y) * bend,
+        y: (p0.y + p1.y) / 2 + (p1.x - p0.x) * bend,
+      };
+      geo[b.id] = { p0, c, p1 };
+      out += `<g class="ah-w-${b.id}${live ? "" : " ah-idlewire"}" data-wire="${b.id}"><path class="ah-wire" d="M${p0.x} ${p0.y}Q${c.x} ${c.y} ${p1.x} ${p1.y}"/><circle class="ah-port" cx="${p0.x}" cy="${p0.y}" r="4"/><circle class="ah-port" cx="${p1.x}" cy="${p1.y}" r="4"/></g>`;
     }
     wires.innerHTML = out;
   }
@@ -422,23 +471,51 @@ export function mountHarness(root) {
     void e.offsetWidth;
     e.classList.add("ah-ping");
   }
-  // A signal travelling from a part to the model.
-  function travel(from) {
-    const a = elOf(from);
-    if (!a || reduced() || state.fast) return;
-    const p = centre(a);
-    const q = centre(modelEl);
-    dot.className = `ah-dot ah-c-${PARTS[from].branch}`;
-    dot.animate(
-      [
-        { transform: `translate(${p.x}px, ${p.y}px) scale(0.6)`, opacity: 0 },
-        { opacity: 1, offset: 0.15 },
-        { opacity: 1, offset: 0.85 },
-        { transform: `translate(${q.x}px, ${q.y}px) scale(1)`, opacity: 0 },
-      ],
-      { duration: PACE.signal, easing: "cubic-bezier(0.45, 0, 0.25, 1)" }
-    );
+  const still = () => reduced() || state.fast;
+  // A signal crossing a section's wire: "in" towards the model, "out" away
+  // from it. Resolves when it lands.
+  async function travel(part, dir = "in") {
+    const g = geo[PARTS[part]?.branch];
+    if (!g || !elOf(part) || still())
+      return ping(dir === "in" ? "model" : part);
+    const dur = PACE.signal / state.speed;
+    const wire = wires.querySelector(`[data-wire="${PARTS[part].branch}"]`);
+    wire?.classList.add(dir === "in" ? "ah-flowin" : "ah-flowout");
+    const at = t => {
+      const u = dir === "in" ? t : 1 - t;
+      const x =
+        (1 - u) ** 2 * g.p0.x + 2 * (1 - u) * u * g.c.x + u * u * g.p1.x;
+      const y =
+        (1 - u) ** 2 * g.p0.y + 2 * (1 - u) * u * g.c.y + u * u * g.p1.y;
+      return `translate(${x}px, ${y}px)`;
+    };
+    // the lead dot and two smaller ones behind it
+    const dots = [0, 1, 2].map(i => {
+      const d = h("div", `ah-dot ah-c-${PARTS[part].branch}`);
+      map.append(d);
+      const frames = [0, 0.2, 0.4, 0.6, 0.8, 1].map(t => ({
+        transform: `${at(t)} scale(${1 - i * 0.25})`,
+        opacity: t === 0 || t === 1 ? 0 : 1,
+        offset: t,
+      }));
+      return d
+        .animate(frames, {
+          duration: dur,
+          delay: i * 55,
+          easing: "cubic-bezier(0.45, 0, 0.25, 1)",
+        })
+        .finished.then(
+          () => d.remove(),
+          () => d.remove()
+        );
+    });
+    await dots[0];
+    wire?.classList.remove("ah-flowin", "ah-flowout");
+    ping(dir === "in" ? "model" : part);
   }
+  const flow = async (part, dirs = FLOW[part] || ["in"]) => {
+    for (const d of dirs) await travel(part, d);
+  };
 
   // ---------- the trace ----------
   let shown = "now";
@@ -700,8 +777,7 @@ export function mountHarness(root) {
     state.running = true;
     state.fast = false;
     root.classList.add("ah-running");
-    runBtn.querySelector("span").textContent = model.real ? "Running" : "Skip";
-    runBtn.disabled = !!model.real;
+    runBtn.querySelector("span").textContent = "Skip";
     hintBtn.disabled = true;
     note("");
     root
@@ -730,7 +806,7 @@ export function mountHarness(root) {
     botEl.dataset.face = "idle";
 
     const pace = ms =>
-      model.real || state.fast ? Promise.resolve() : wait(ms);
+      state.fast ? Promise.resolve() : wait(ms / state.speed);
     let live = null;
     let res;
     try {
@@ -757,8 +833,13 @@ export function mountHarness(root) {
             };
             const base = e.segs.filter(g => !own[g.by]);
             line("system", "System", base.map(g => g.text).join("\n\n"));
+            // the parts that write the instructions send them in
+            const writers = [...new Set(e.segs.map(g => g.by))].filter(
+              by => by && by !== "tools" && !own[by]
+            );
+            await Promise.all(writers.map(by => travel(by, "in")));
             for (const g of e.segs.filter(g => own[g.by])) {
-              await pace(PACE.line);
+              await pace(PACE.line / 2);
               const el = line(
                 "part",
                 PARTS[g.by].name,
@@ -768,26 +849,29 @@ export function mountHarness(root) {
               );
               // the part this task is about is shown in full
               if (g.by === T.gives) el.classList.add("ah-open");
-              ping(g.by);
-              travel(g.by);
+              await travel(g.by, "in");
             }
           } else if (e.kind === "model") {
             if (live) live.lastChild.textContent = e.text;
             else line("model", "Model", e.text);
             live = null;
-            ping("model");
+            botEl.dataset.face = "idle";
             blip(500, 0.05, "triangle");
+            // a call leaves the model for the tools
+            if (parts.includes("tools") && parseReply(e.text).call)
+              await travel("tools", "out");
+            else ping("model");
           } else if (e.kind === "user") line("user", "User", e.text);
           else if (e.kind === "end") line("end", "Run", e.text);
           else if (e.kind === "sys")
             panes.now.append(h("p", "ah-rule", e.text));
-          else if (e.kind === "ask")
+          else if (e.kind === "ask") {
             line("part", PARTS.perms.name, e.text, "perms");
-          else {
+            await travel("perms", "out");
+          } else {
             line(e.kind, PARTS[e.part].name, tidy(e.text), e.part);
-            ping(e.part);
-            travel(e.part);
             blip(420, 0.05, "triangle");
+            await flow(e.part);
           }
           await pace(PACE.line);
         },
@@ -911,12 +995,12 @@ export function mountHarness(root) {
 
   // Field notes: one per cleared level, in level order. The current level's
   // note, if it has been earned, is marked and scrolled to.
-  function showNotes() {
+  function showNotes(back) {
     const s = sheet("Field notes");
-    const x = h("button", "ah-round ah-close", icon("x"));
+    const x = h("button", "ah-round ah-close", icon(back ? "back" : "x"));
     x.type = "button";
-    x.setAttribute("aria-label", "Close");
-    x.addEventListener("click", closeOverlay);
+    x.setAttribute("aria-label", back ? "Back" : "Close");
+    x.addEventListener("click", back || closeOverlay);
     const have = noted();
     const here = task().gives;
     const card = id => {
@@ -954,7 +1038,7 @@ export function mountHarness(root) {
       <h3 class="ah-sheettitle">${icon(id)}<span>${P.name}</span></h3>
       <ul class="ah-evals">${res.evals.map(e => `<li class="ah-e-ok">${icon("check")}<span>${e.label}</span></li>`).join("")}</ul>
       <div class="ah-note"><small>What you learned</small>${lesson(id)}</div>
-      <p class="ah-added">${icon("book")}<span>${first ? "Added to your field notes" : "In your field notes"}</span></p>
+      <button type="button" class="ah-added">${icon("book")}<span>${first ? "Added to your field notes" : "In your field notes"}</span>${icon("fwd")}</button>
       <div class="ah-cardbtns"></div>`;
     const btns = s.querySelector(".ah-cardbtns");
     const mk = (label, primary, fn) => {
@@ -964,9 +1048,13 @@ export function mountHarness(root) {
       btns.append(b);
       return b;
     };
+    // the notes open at this level's note, and closing them comes back here
+    s.querySelector(".ah-added").addEventListener("click", () =>
+      showNotes(() => showCleared(res, false))
+    );
     if (last) {
-      mk("Field notes", false, showNotes);
-      mk("Done", true, closeOverlay).focus();
+      mk("Stay here", false, closeOverlay);
+      mk("Finish", true, () => showFinale(true)).focus();
     } else {
       mk("Stay here", false, closeOverlay);
       mk("Next level", true, () => go(state.at + 1)).focus();
@@ -998,6 +1086,48 @@ export function mountHarness(root) {
       )
       .finished.then(land, land)
       .finally(() => fly.remove());
+  }
+
+  // The end of the game: the whole idea in one screen.
+  function showFinale(first) {
+    const s = sheet("What you built");
+    s.classList.add("ah-finale");
+    let n = 0;
+    const rows = BRANCHES.map(
+      b =>
+        `<li class="ah-c-${b.id}"><div><b>${b.name}</b><span class="ah-chips">${ORDER[
+          b.id
+        ]
+          .map(
+            id =>
+              `<i style="animation-delay:${first ? 250 + n++ * 70 : 0}ms">${icon(id)}${PARTS[id].name}</i>`
+          )
+          .join("")}</span></div><p>${b.sum}</p></li>`
+    ).join("");
+    s.innerHTML = `<small class="ah-kicker">${icon("trophy")}All ${TASKS.length} levels cleared</small>
+      <h3 class="ah-sheettitle">Agent = model + harness</h3>
+      <div class="ah-eq"><span class="ah-eq-m"><b>Model</b><small>${models.current().name}</small></span><i>+</i><span class="ah-eq-h"><b>Harness</b><small>${ALL.length} parts of ordinary code</small></span><i>=</i><span class="ah-eq-a"><b>Agent</b><small>passes all ${TASKS.length} tasks</small></span></div>
+      <p class="ah-proof">Every task failed until the right part was connected. With all ${ALL.length} around it, the same model passes every one.</p>
+      <small class="ah-kicker">What the harness does</small>
+      <ul class="ah-sums">${rows}</ul>
+      <p class="ah-close-line">The model never changed. Everything you added was ordinary code around it, and that code is what turned a text predictor into an agent.</p>
+      <div class="ah-cardbtns"></div>`;
+    const btns = s.querySelector(".ah-cardbtns");
+    const mk = (label, primary, fn) => {
+      const b = h("button", `ah-btn${primary ? " ah-run" : ""}`, label);
+      b.type = "button";
+      b.addEventListener("click", fn);
+      btns.append(b);
+      return b;
+    };
+    mk("Field notes", false, () => showNotes(() => showFinale()));
+    mk("Keep playing", true, closeOverlay).focus({ preventScroll: true });
+    if (first && !reduced()) {
+      s.classList.add("ah-party");
+      [660, 880, 990, 1320].forEach((f, i) =>
+        setTimeout(() => blip(f, 0.12), 250 + i * 140)
+      );
+    }
   }
 
   let rz;

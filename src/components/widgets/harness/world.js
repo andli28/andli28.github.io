@@ -3,12 +3,36 @@
 // line and a Field Notes card.
 
 export const BRANCHES = [
-  { id: "context", name: "Context" },
-  { id: "action", name: "Action" },
-  { id: "guard", name: "Guard" },
-  { id: "memory", name: "Memory" },
-  { id: "verify", name: "Verify" },
-  { id: "control", name: "Control" },
+  {
+    id: "context",
+    name: "Context",
+    sum: "Decides what the model sees: standing rules, and only as much text as fits.",
+  },
+  {
+    id: "action",
+    name: "Action",
+    sum: "Gives the model hands. Without tools it can only guess.",
+  },
+  {
+    id: "guard",
+    name: "Guard",
+    sum: "Limits the damage: outside text is data, and writes ask first or land in a sandbox.",
+  },
+  {
+    id: "memory",
+    name: "Memory",
+    sum: "Carries what a model call forgets: the conversation, notes, the repository's own instructions.",
+  },
+  {
+    id: "verify",
+    name: "Verify",
+    sum: "Doesn't take the model's word. Answers are checked before they count.",
+  },
+  {
+    id: "control",
+    name: "Control",
+    sum: "Keeps the loop going: errors go back to the model, and repeats are stopped.",
+  },
 ];
 
 const p = (branch, name, short, does, wild) => ({

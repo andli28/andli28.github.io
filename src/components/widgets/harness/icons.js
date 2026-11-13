@@ -70,6 +70,8 @@ const P = {
   subs: "M12 3a3 3 0 1 0 0 6a3 3 0 0 0 0-6zM6 14a2.5 2.5 0 1 0 0 5a2.5 2.5 0 0 0 0-5zM18 14a2.5 2.5 0 1 0 0 5a2.5 2.5 0 0 0 0-5zM12 9v2M12 11l-5 3M12 11l5 3",
 };
 
+P.trophy =
+  "M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M9 20h6";
 P.feedback = P.catch;
 P.history = P.convo;
 P.notes = P.note;

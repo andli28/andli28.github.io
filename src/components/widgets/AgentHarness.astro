@@ -301,10 +301,44 @@
     overflow: visible;
   }
   .ah-wire {
+    fill: none;
     stroke: var(--c, var(--ah-mute));
     stroke-width: 2.5;
     stroke-linecap: round;
-    opacity: 0.55;
+    opacity: 0.6;
+  }
+  .ah-port {
+    fill: var(--ah-bg);
+    stroke: var(--c, var(--ah-mute));
+    stroke-width: 2.5;
+  }
+  .ah-idlewire .ah-wire {
+    stroke: var(--ah-edge);
+    stroke-dasharray: 3 7;
+    opacity: 1;
+  }
+  .ah-idlewire .ah-port {
+    stroke: var(--ah-edge);
+  }
+  /* a wire that is carrying something: dashes moving the way it goes */
+  .ah-flowin .ah-wire,
+  .ah-flowout .ah-wire {
+    stroke-width: 3.5;
+    stroke-dasharray: 2 9;
+    opacity: 1;
+    animation: ah-flow 500ms linear infinite;
+  }
+  .ah-flowout .ah-wire {
+    animation-direction: reverse;
+  }
+  .ah-flowin .ah-port,
+  .ah-flowout .ah-port {
+    fill: var(--c);
+  }
+  @keyframes ah-flow {
+    to {
+      stroke-dashoffset: -22;
+    }
   }
   .ah-w-context {
     --c: var(--ah-blue);
@@ -334,9 +368,10 @@
     flex-direction: column;
     align-items: center;
     gap: 7px;
-    padding: 6px;
-    border-radius: 14px;
-    background: var(--ah-bg);
+    padding: 16px 10px 10px;
+    border-radius: 18px;
+    border: 1.5px solid color-mix(in srgb, var(--c) 32%, var(--ah-bg));
+    background: color-mix(in srgb, var(--c) 6%, var(--ah-bg));
   }
   .ah-b-control {
     grid-area: control;
@@ -358,6 +393,7 @@
   }
   .ah-branch.ah-fog {
     background: transparent;
+    border-color: transparent;
   }
   .ah-branch.ah-fog::after {
     content: "?";
@@ -369,11 +405,22 @@
   .ah-branch.ah-appear {
     animation: ah-rise 320ms var(--ah-ease) both;
   }
+  /* the section's name sits on the panel's top edge, like a tab */
   .ah-branch h3 {
+    position: absolute;
+    top: -9px;
+    left: 50%;
+    translate: -50% 0;
     margin: 0;
-    font-size: 12px;
+    padding: 0 8px;
+    border-radius: 6px;
+    background: var(--ah-bg);
+    font-size: 11px;
     font-weight: 800;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    line-height: 16px;
+    white-space: nowrap;
     color: var(--c);
   }
   .ah-parts {
@@ -453,13 +500,14 @@
   }
   .ah-dot {
     position: absolute;
-    left: -6px;
-    top: -6px;
+    left: -7px;
+    top: -7px;
     z-index: 4;
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
     background: var(--c, var(--ah-accent));
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 28%, transparent);
     opacity: 0;
     pointer-events: none;
     will-change: transform;
@@ -743,13 +791,24 @@
   .ah-cleared .ah-evals {
     margin-bottom: 12px;
   }
-  .ah-added {
+  .ah .ah-added {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin: 12px 0 0;
-    color: var(--ah-mute);
+    width: 100%;
+    margin: 10px 0 0;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: var(--ah-tile) !important;
+    color: var(--ah-ink) !important;
     font-weight: 700;
+    text-align: left;
+  }
+  .ah-added span {
+    flex: 1;
+  }
+  .ah-added .ah-i:last-child {
+    color: var(--ah-mute);
   }
   .ah-added .ah-i {
     width: 18px;
@@ -787,6 +846,135 @@
   @keyframes ah-bump {
     30% {
       transform: scale(1.35);
+    }
+  }
+  /* ---- the ending ---- */
+  .ah-kicker .ah-i {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    margin-right: 6px;
+    vertical-align: -2px;
+    color: var(--ah-amber);
+  }
+  .ah-finale .ah-sheettitle {
+    margin: 4px 0 14px;
+    font-size: 28px;
+  }
+  .ah-eq {
+    display: grid;
+    grid-template-columns: 1fr auto 1.3fr auto 1fr;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .ah-eq > span {
+    display: grid;
+    gap: 2px;
+    align-content: center;
+    padding: 10px 8px;
+    border-radius: 14px;
+    background: var(--ah-tile);
+    text-align: center;
+  }
+  .ah-eq b {
+    font-size: 15px;
+    font-weight: 800;
+  }
+  .ah-eq small {
+    font-size: 11px;
+    color: var(--ah-mute);
+    line-height: 1.25;
+  }
+  .ah-eq > i {
+    align-self: center;
+    font-style: normal;
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--ah-mute);
+  }
+  .ah-eq .ah-eq-h {
+    border: 1.5px dashed var(--ah-edge);
+    background: transparent;
+  }
+  .ah-eq .ah-eq-a {
+    background: var(--ah-accent);
+    color: var(--ah-on-accent);
+  }
+  .ah-eq .ah-eq-a small {
+    color: inherit;
+    opacity: 0.85;
+  }
+  .ah-proof {
+    margin: 12px 0 18px;
+    text-wrap: pretty;
+  }
+  .ah-sums {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+  }
+  .ah-sums li {
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: var(--ah-tile);
+    border-left: 4px solid var(--c);
+  }
+  .ah-sums li > div {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+  }
+  .ah-sums b {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--c);
+  }
+  .ah-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .ah-chips i {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px 2px 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--c) 14%, var(--ah-tile));
+    font-style: normal;
+    font-size: 11.5px;
+    font-weight: 700;
+  }
+  .ah-chips .ah-i {
+    width: 13px;
+    height: 13px;
+    color: var(--c);
+  }
+  .ah-party .ah-chips i {
+    animation: ah-settle 320ms var(--ah-ease) backwards;
+  }
+  .ah-sums p {
+    margin: 6px 0 0;
+    font-size: 13.5px;
+    text-wrap: pretty;
+  }
+  .ah-close-line {
+    margin: 16px 0 0;
+    font-weight: 700;
+    text-wrap: pretty;
+  }
+  @media (max-width: 520px) {
+    .ah-eq {
+      grid-template-columns: 1fr;
+    }
+    .ah-eq > i {
+      justify-self: center;
+      line-height: 1;
     }
   }
   .ah-note.ah-here {
@@ -1096,9 +1284,13 @@
   /* ---- buttons ---- */
   .ah-actions {
     display: grid;
-    grid-template-columns: 1fr 2.4fr;
+    grid-template-columns: 1fr 2.4fr 52px;
     gap: 8px;
     margin-top: 12px;
+  }
+  .ah-btn.ah-speed {
+    font-variant-numeric: tabular-nums;
+    color: var(--ah-mute);
   }
   .ah-btn {
     display: flex !important;
@@ -1354,15 +1546,23 @@
     }
     .ah-map {
       gap: 14px 10px;
-      padding: 12px 4px 8px;
+      padding: 22px 4px 10px;
       margin-top: 8px;
-      grid-template-columns: 1fr 112px 1fr;
+      grid-template-columns: 1fr 118px 1fr;
     }
     .ah-branch {
-      padding: 4px 0;
+      padding: 12px 3px 6px;
+      border-radius: 14px;
+    }
+    .ah-parts {
+      gap: 4px;
+    }
+    .ah-branch h3 {
+      font-size: 9px;
+      padding: 0 5px;
     }
     .ah-part {
-      width: 53px;
+      width: 51px;
       padding: 6px 1px 4px !important;
       border-radius: 11px;
     }
@@ -1422,7 +1622,10 @@
       font-size: 11.5px;
     }
     .ah-branch h3 {
-      font-size: 14px;
+      font-size: 12px;
+    }
+    .ah-branch {
+      padding: 20px 14px 14px;
     }
     .ah-parts {
       gap: 8px;

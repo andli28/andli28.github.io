@@ -14,6 +14,9 @@ export const REAL = { name: "Qwen 3 0.6B", megabytes: 400 };
 
 const call = (tool, args) => JSON.stringify({ tool, args });
 const nap = ms => new Promise(r => setTimeout(r, ms));
+// How long the stand-in waits between chunks of a reply, in ms. The page
+// sets it; 0 means don't wait.
+export const typing = { ms: () => 12 };
 
 function decide(messages, task, { summary, stage = 0 }) {
   if (summary) {
@@ -84,14 +87,12 @@ export function standIn() {
     real: false,
     async chat(messages, opts) {
       const text = decide(messages, opts.task, opts);
-      // arrive a few words at a time, like a model does
+      // arrive a few characters at a time, like a model does
       if (opts.onToken) {
-        const words = text.split(/(?<=\s)/);
-        let shown = "";
-        for (const w of words) {
-          shown += w;
-          opts.onToken(shown);
-          await nap(Math.min(40, 600 / words.length));
+        for (let i = 4; i < text.length + 4; i += 4) {
+          opts.onToken(text.slice(0, i));
+          const ms = typing.ms();
+          if (ms) await nap(ms);
         }
       } else await nap(0);
       return {
