@@ -36,15 +36,27 @@ const seeds = [20, 62, 104, 146, 188, 230, 272, 314].map((deg, i) => {
   const [x, y] = polar(deg, i % 2 ? 46 : 68);
   return { x, y, rot: deg };
 });
+// Inside each fruit, shown only within the wedge (the "flesh"): tomato
+// seeds, orange segments, apple pips.
+const tomatoSeeds = Array.from({ length: 15 }, (_, i) => {
+  const deg = i * 24 + 6;
+  const [x, y] = polar(deg, i % 2 ? 58 : 76);
+  return { x, y, rot: deg };
+});
+const segments = Array.from({ length: 10 }, (_, i) => {
+  const [x1, y1] = polar(i * 36, 44);
+  const [x2, y2] = polar(i * 36, 112);
+  return { x1, y1, x2, y2 };
+});
+const pips = [36, 108, 180, 252, 324].map(deg => {
+  const [x, y] = polar(deg, 62);
+  return { x, y, rot: deg };
+});
 // Tomato: five sepals around the stem.
 const sepals = [-54, 18, 90, 162, 234];
 
-const FRUITS = [
-  { id: "tomato", name: "tomato", skin: "#e0503c", top: "#2e9a6c" },
-  { id: "orange", name: "orange", skin: "#f28c28", top: "#2e9a6c" },
-  { id: "apple", name: "apple", skin: "#d9363e", top: "#6b4226" },
-  { id: "watermelon", name: "watermelon", skin: "#2e9a6c", top: "#1f6e4d" },
-];
+// Their icons are drawn by the script from the dial itself, so they match.
+const FRUITS = ["tomato", "orange", "apple", "watermelon"];
 ---
 
 <div class="ft" data-mode="focus" data-state="idle" data-fruit="tomato">
@@ -54,7 +66,9 @@ const FRUITS = [
 
   <p class="ft-toast" data-ft="toast" role="status" aria-live="polite"></p>
 
-  <div class="ft-top">
+  <!-- Next to the back link, so the right-hand pills keep their width and
+       the top-center message has room. -->
+  <div class="ft-top ft-top-left">
     <button
       type="button"
       class="ft-pill ft-fruit-pill"
@@ -63,20 +77,11 @@ const FRUITS = [
       aria-controls="ft-fruit-panel"
       aria-label="Fruit: tomato"
     >
-      {
-        FRUITS.map(f => (
-          <svg
-            class="ft-fruit-icon"
-            data-fruit-only={f.id}
-            viewBox="-12 -14 24 26"
-            aria-hidden="true"
-          >
-            <circle r="10" cy="1" fill={f.skin} />
-            <rect x="-1.5" y="-13" width="3" height="6" rx="1.5" fill={f.top} />
-          </svg>
-        ))
-      }
+      <span class="ft-fruit-art" data-ft="fruit-icon" aria-hidden="true"></span>
     </button>
+  </div>
+
+  <div class="ft-top">
     <button
       type="button"
       class="ft-pill"
@@ -121,19 +126,9 @@ const FRUITS = [
     <div class="ft-fruit-grid" role="group" aria-label="Fruit">
       {
         FRUITS.map(f => (
-          <button type="button" data-ft-fruit={f.id} aria-pressed="false">
-            <svg viewBox="-12 -14 24 26" aria-hidden="true">
-              <circle r="10" cy="1" fill={f.skin} />
-              <rect
-                x="-1.5"
-                y="-13"
-                width="3"
-                height="6"
-                rx="1.5"
-                fill={f.top}
-              />
-            </svg>
-            <span>{f.name}</span>
+          <button type="button" data-ft-fruit={f} aria-pressed="false">
+            <span class="ft-fruit-art" aria-hidden="true" />
+            <span>{f}</span>
           </button>
         ))
       }
@@ -339,6 +334,43 @@ const FRUITS = [
             ))
           }
         </g>
+        <g data-fruit-only="tomato" clip-path="url(#ft-wedge-clip)">
+          {
+            tomatoSeeds.map(s => (
+              <ellipse
+                class="ft-seed"
+                rx="2.8"
+                ry="4.6"
+                transform={`translate(${s.x} ${s.y}) rotate(${s.rot})`}
+              />
+            ))
+          }
+        </g>
+        <g data-fruit-only="orange" clip-path="url(#ft-wedge-clip)">
+          {
+            segments.map(s => (
+              <line
+                class="ft-segment"
+                x1={s.x1}
+                y1={s.y1}
+                x2={s.x2}
+                y2={s.y2}
+              />
+            ))
+          }
+        </g>
+        <g data-fruit-only="apple" clip-path="url(#ft-wedge-clip)">
+          {
+            pips.map(s => (
+              <ellipse
+                class="ft-seed"
+                rx="4.5"
+                ry="9"
+                transform={`translate(${s.x} ${s.y}) rotate(${s.rot})`}
+              />
+            ))
+          }
+        </g>
         {
           ticks.map(t => (
             <line
@@ -446,6 +478,7 @@ const FRUITS = [
     --fruit-face: #ffffff;
     --fruit-face-shade: #c23f2f;
     --fruit-wedge: #f2a33a;
+    --fruit-seed: #fff1c2;
     --fruit-leaf: #2e9a6c;
     --fruit-stem: #23774f;
     /* Ticks and numerals sit on the light face in either theme. */
@@ -476,12 +509,14 @@ const FRUITS = [
   }
   .ft[data-fruit="orange"] {
     --ft-focus: #e0701a;
-    --fruit-skin: #f28c28;
-    --fruit-shade: #c96a12;
+    --fruit-skin: #ec7a1c;
+    --fruit-shade: #c45f0e;
     --fruit-rind: #ffe3b3;
     --fruit-face: #fffaf0;
     --fruit-face-shade: #f0c27a;
-    --fruit-wedge: #f28c28;
+    /* Juicy yellow-orange flesh, split by white pith. */
+    --fruit-wedge: #ffbe2e;
+    --fruit-seed: #fffaf0;
     --fruit-leaf: #2e9a6c;
     --fruit-stem: #6b4226;
   }
@@ -492,7 +527,9 @@ const FRUITS = [
     --fruit-rind: #fff1cf;
     --fruit-face: #fffbef;
     --fruit-face-shade: #e9d4a4;
-    --fruit-wedge: #d9363e;
+    /* Golden flesh with brown pips, not the red of the skin. */
+    --fruit-wedge: #f2b134;
+    --fruit-seed: #5b3416;
     --fruit-leaf: #2e9a6c;
     --fruit-stem: #6b4226;
   }
@@ -505,6 +542,7 @@ const FRUITS = [
     --fruit-face: #ffe4e1;
     --fruit-face-shade: #b9dca0;
     --fruit-wedge: #ef4b5a;
+    --fruit-seed: #2a1c18;
     --fruit-leaf: #2e9a6c;
     --fruit-stem: #6b4226;
   }
@@ -583,18 +621,32 @@ const FRUITS = [
       color 150ms ease,
       border-color 150ms ease;
   }
+  .ft-top.ft-top-left {
+    right: auto;
+    left: 5rem;
+  }
   .ft-fruit-pill {
     display: grid;
     place-items: center;
     padding: 0.2rem 0.5rem;
   }
-  .ft-fruit-icon {
+  /* Copies of the dial's fruit (drawn by the script), 360 x 394. */
+  .ft-fruit-art {
+    display: block;
     width: 1.15rem;
-    height: 1.25rem;
+    aspect-ratio: 360 / 394;
+  }
+  .ft-fruit-art svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
   }
 
   /* Fruit picker: a row of four, each a little fruit with its name. */
-  .ft-fruit-panel {
+  .ft-panel.ft-fruit-panel {
+    right: auto;
+    left: 1rem;
     width: min(20rem, calc(100vw - 2rem));
   }
   .ft-fruit-grid {
@@ -617,9 +669,8 @@ const FRUITS = [
       background-color 150ms ease,
       transform 140ms var(--ft-ease-out);
   }
-  .ft-fruit-grid svg {
+  .ft-fruit-grid .ft-fruit-art {
     width: 1.9rem;
-    height: 2rem;
   }
   .ft-fruit-grid button[aria-pressed="true"] {
     border-color: var(--ft-faint);
@@ -787,7 +838,7 @@ const FRUITS = [
     width: var(--ft-dial);
     aspect-ratio: 1;
     /* Room for the stem and leaves, which reach above the SVG box. */
-    margin-top: calc(var(--ft-dial) * 0.07);
+    margin-top: calc(var(--ft-dial) * 0.04);
     touch-action: none;
     cursor: grab;
   }
@@ -846,7 +897,12 @@ const FRUITS = [
     opacity: 0.55;
   }
   .ft-seed {
-    fill: #2a1c18;
+    fill: var(--fruit-seed);
+  }
+  .ft-segment {
+    stroke: var(--fruit-seed);
+    stroke-width: 5;
+    stroke-linecap: round;
   }
   .ft-wedge {
     fill: var(--ft-wedge);
@@ -910,6 +966,8 @@ const FRUITS = [
   .ft-task {
     position: relative;
     display: block;
+    /* Up into the empty band under the fruit's round bottom. */
+    margin-top: calc(var(--ft-dial) * -0.06);
     cursor: text;
   }
   .ft-task::after {
@@ -975,7 +1033,7 @@ const FRUITS = [
     background: transparent;
     color: var(--ft-ink);
     font-family: "Iowan Old Style", "New York", ui-serif, Georgia, serif;
-    font-size: clamp(1.4rem, 4.2vw, 2.1rem);
+    font-size: clamp(1.15rem, 3.2vw, 1.6rem);
     font-style: italic;
     text-align: center;
     caret-color: var(--ft-color);
@@ -1044,10 +1102,26 @@ const FRUITS = [
       opacity 260ms var(--ft-ease-out),
       transform 260ms var(--ft-ease-out);
   }
-  @media (max-width: 560px) {
-    /* Below the corner pills on narrow screens. */
+  /* Below the corner pills wherever the two would meet. */
+  @media (max-width: 1100px) {
     .ft-toast {
       top: 3.3rem;
+    }
+  }
+  @media (max-width: 560px) {
+    /* The back link and four pills fill a phone's top edge, so the fruit
+       button moves to the bottom-right corner and its picker opens up. */
+    .ft-top.ft-top-left {
+      top: auto;
+      right: 0.75rem;
+      bottom: 0.6rem;
+      left: auto;
+    }
+    .ft-panel.ft-fruit-panel {
+      top: auto;
+      right: 0.75rem;
+      bottom: 3rem;
+      left: auto;
     }
     /* Four pills plus the back link have to share a phone's width. */
     .ft-top {
@@ -1140,6 +1214,15 @@ const FRUITS = [
   }
 
   /* ---- Timeline strip ------------------------------------------------- */
+  /* No recent-task chips during a plan; don't hold their row open. */
+  .ft.has-plan .ft-recent {
+    display: none;
+  }
+  /* Full size whenever it fits; only on a short screen with the plan's
+     timeline showing does the dial give up height so nothing overlaps. */
+  .ft.has-plan {
+    --ft-dial: min(84vw, 62svh, 540px, calc(100svh - 17.5rem));
+  }
   .ft.has-plan .ft-stage {
     padding-bottom: 7rem;
   }

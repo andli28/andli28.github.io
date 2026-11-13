@@ -128,6 +128,7 @@ export function mountFocusTimer(root) {
     resetToday: $("reset-today"),
     clearHistory: $("clear-history"),
     fruitBtn: $("fruit-btn"),
+    fruitIcon: $("fruit-icon"),
     fruits: [...root.querySelectorAll("[data-ft-fruit]")],
     panels: {
       fruit: { btn: $("fruit-btn"), panel: $("fruit-panel") },
@@ -202,10 +203,11 @@ export function mountFocusTimer(root) {
     onClose: () => render(),
   });
 
-  // The pop-out draws the same fruit as the dial: a copy of the dial's SVG
-  // without the ticks, numerals, hand and the other fruits' parts, carrying
-  // the fruit's colors as resolved from the page's CSS. Rebuilt only when
-  // the fruit or the mode (which colors the wedge) changes.
+  // The pop-out and the fruit icons draw the same fruit as the dial: a copy
+  // of the dial's SVG without the ticks, numerals, hand and the other
+  // fruits' parts, carrying that fruit's colors as resolved from the page's
+  // CSS (read off a hidden probe, so any fruit can be drawn, not only the
+  // current one).
   const ART_VARS = [
     "--fruit-skin",
     "--fruit-shade",
@@ -214,14 +216,25 @@ export function mountFocusTimer(root) {
     "--fruit-face-shade",
     "--fruit-leaf",
     "--fruit-stem",
+    "--fruit-seed",
     "--ft-wedge",
   ];
-  let art = { key: "", svg: "" };
-  function fruitArt() {
-    const { fruit, mode } = root.dataset;
-    const key = `${fruit}|${mode}`;
-    if (art.key === key) return art.svg;
-    const css = getComputedStyle(root);
+  const artCache = new Map();
+  function fruitSvg(fruit, mode, { icon = false } = {}) {
+    const key = `${fruit}|${mode}|${icon}`;
+    if (artCache.has(key)) return artCache.get(key);
+    const probe = document.createElement("div");
+    probe.className = "ft";
+    probe.dataset.fruit = fruit;
+    probe.dataset.mode = mode;
+    probe.style.display = "none";
+    root.append(probe);
+    const css = getComputedStyle(probe);
+    const vars = ART_VARS.map(
+      v => `${v}:${css.getPropertyValue(v).trim()}`
+    ).join(";");
+    probe.remove();
+
     const svg = el.dial.querySelector("svg").cloneNode(true);
     for (const n of svg.querySelectorAll(".ft-tick, .ft-num, .ft-hand")) {
       n.remove();
@@ -233,21 +246,38 @@ export function mountFocusTimer(root) {
     const wedge = svg.querySelector(".ft-wedge");
     wedge.removeAttribute("d");
     wedge.removeAttribute("data-ft");
+    // Icons show 25 minutes set, like the Lab thumbnail.
+    if (icon) wedge.setAttribute("d", wedgePath(25 / 60));
     svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
     // Room for the stem and leaves above the body.
     svg.setAttribute("viewBox", "-180 -212 360 394");
-    svg.setAttribute(
-      "style",
-      ART_VARS.map(v => `${v}:${css.getPropertyValue(v).trim()}`).join(";")
+    svg.setAttribute("style", vars);
+    artCache.set(key, svg.outerHTML);
+    return artCache.get(key);
+  }
+
+  // An icon sits in the page beside the dial, so its clip-path ids get a
+  // suffix of their own instead of repeating the dial's.
+  let iconSeq = 0;
+  function fruitIcon(fruit) {
+    const n = ++iconSeq;
+    return fruitSvg(fruit, "focus", { icon: true }).replace(
+      /ft-(body-clip|wedge-clip|wedge-path)/g,
+      `$&-icon${n}`
     );
-    art = { key, svg: svg.outerHTML };
-    return art.svg;
+  }
+  for (const btn of el.fruits) {
+    btn.querySelector(".ft-fruit-art").innerHTML = fruitIcon(
+      btn.dataset.ftFruit
+    );
   }
 
   function miniView() {
     const left = Math.max(0, remainingMs());
     const focus = state.mode === "focus";
-    const label = focus ? state.task || "focus" : KIND_NAME[state.breakKind];
+    // Before a session starts, show what's typed in the task line so far.
+    const task = inProgress() ? state.task : el.task.value.trim();
+    const label = focus ? task || "focus" : KIND_NAME[state.breakKind];
     return {
       // The mini window counts down from these itself.
       endAt: state.running ? state.endAt : null,
@@ -257,8 +287,8 @@ export function mountFocusTimer(root) {
       mode: state.mode,
       running: state.running,
       started: inProgress(),
-      art: fruitArt(),
-      artKey: art.key,
+      art: fruitSvg(state.fruit, state.mode),
+      artKey: `${state.fruit}|${state.mode}`,
       dark: document.documentElement.dataset.theme === "dark",
     };
   }
@@ -797,7 +827,9 @@ export function mountFocusTimer(root) {
     // position, unaffected by its closed-state scale.
     const b = btn.getBoundingClientRect();
     const panelLeft = root.getBoundingClientRect().left + panel.offsetLeft;
-    panel.style.transformOrigin = `${Math.round(b.left + b.width / 2 - panelLeft)}px 0`;
+    // A pill in the bottom half (the fruit button on phones) opens upward.
+    const fromBelow = b.top > window.innerHeight / 2;
+    panel.style.transformOrigin = `${Math.round(b.left + b.width / 2 - panelLeft)}px ${fromBelow ? "100%" : "0"}`;
     panel.dataset.open = "true";
     panel.inert = false;
     btn.setAttribute("aria-expanded", "true");
@@ -1077,6 +1109,7 @@ export function mountFocusTimer(root) {
 
   el.task.addEventListener("input", () => {
     renderRecent();
+    mini.update(miniView());
   });
   // Renaming mid-session: the task line stays editable while a focus
   // session runs or is paused. The new name is saved on Enter or when you
@@ -1332,6 +1365,10 @@ export function mountFocusTimer(root) {
       );
     }
     el.fruitBtn.setAttribute("aria-label", `Fruit: ${state.fruit}`);
+    if (el.fruitIcon.dataset.fruit !== state.fruit) {
+      el.fruitIcon.dataset.fruit = state.fruit;
+      el.fruitIcon.innerHTML = fruitIcon(state.fruit);
+    }
     root.dataset.state = state.running ? "running" : paused ? "paused" : "idle";
 
     const active = tabKey();

@@ -28,7 +28,8 @@ const ART_CSS = `
   }
   .ft-stripe { stroke: var(--fruit-shade); stroke-width: 15; stroke-linecap: round; }
   .ft-dimple { fill: var(--fruit-shade); opacity: 0.55; }
-  .ft-seed { fill: #2a1c18; }
+  .ft-seed { fill: var(--fruit-seed); }
+  .ft-segment { stroke: var(--fruit-seed); stroke-width: 5; stroke-linecap: round; }
   .ft-wedge { fill: var(--ft-wedge); }
   .ft-hub-disc { fill: #18181c; }
 `;
