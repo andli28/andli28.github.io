@@ -176,7 +176,7 @@
     font-size: 10px;
     font-weight: 700;
     line-height: 16px;
-    animation: ah-plus 2200ms ease-out both;
+    animation: ah-plus 1600ms var(--ah-ease) both;
   }
   @keyframes ah-plus {
     0% {
@@ -402,9 +402,6 @@
     font-weight: 800;
     color: color-mix(in srgb, var(--ah-edge) 70%, transparent);
   }
-  .ah-branch.ah-appear {
-    animation: ah-rise 320ms var(--ah-ease) both;
-  }
   /* the section's name sits on the panel's top edge, like a tab */
   .ah-branch h3 {
     position: absolute;
@@ -444,6 +441,8 @@
     transition:
       transform 120ms var(--ah-ease),
       box-shadow 120ms var(--ah-ease),
+      background-color 160ms var(--ah-ease),
+      color 160ms,
       opacity 150ms;
   }
   .ah-part .ah-i {
@@ -471,10 +470,6 @@
   }
   .ah-part.ah-new {
     animation: ah-settle 260ms var(--ah-ease);
-  }
-  .ah-part.ah-ping,
-  .ah-model.ah-ping {
-    animation: ah-ping 360ms var(--ah-ease);
   }
   .ah-hinted {
     outline: 3px solid var(--ah-accent) !important;
@@ -529,9 +524,6 @@
       color: var(--ah-ink) !important;
     }
   }
-  .ah-shake {
-    animation: ah-shake 380ms ease-in-out;
-  }
 
   /* ---- the bot ---- */
   .ah-bot {
@@ -555,6 +547,7 @@
     display: grid;
     place-items: center;
     transform-origin: 50% 100%;
+    transition: rotate 220ms var(--ah-ease);
   }
   .ah-ant {
     position: absolute;
@@ -612,7 +605,7 @@
     transform: scaleX(1.5);
   }
   .ah-bot[data-face="happy"] .ah-body {
-    animation: ah-bounce 600ms var(--ah-ease) 2;
+    animation: ah-bounce 600ms 1;
   }
   .ah-bot[data-face="sad"] .ah-visor i,
   .ah-bot[data-face="dizzy"] .ah-visor i {
@@ -840,7 +833,6 @@
     height: 20px;
   }
   .ah-round.ah-bump {
-    z-index: 50;
     animation: ah-bump 520ms var(--ah-ease);
   }
   @keyframes ah-bump {
@@ -1418,14 +1410,14 @@
   }
 
   /* ---- motion ---- */
-  @keyframes ah-ping {
-    40% {
-      transform: scale(1.08);
-    }
-  }
+  /* quick off the ground, then falling under its own weight */
   @keyframes ah-bounce {
+    0% {
+      animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+    }
     50% {
       transform: translateY(-9px) scale(0.95, 1.06);
+      animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0);
     }
   }
   @keyframes ah-wobble {
@@ -1436,56 +1428,29 @@
       rotate: 10deg;
     }
   }
-  @keyframes ah-blockin {
-    from {
-      opacity: 0;
-      transform: translateY(-14px) scale(0.92);
-    }
-  }
-  @keyframes ah-scan {
-    from {
-      opacity: 0.9;
-    }
-    to {
-      opacity: 0;
-      transform: scale(1.015, 1.2);
-    }
-  }
-  @keyframes ah-plus {
-    from {
-      opacity: 0;
-      transform: translateY(6px);
-    }
-    25% {
-      opacity: 1;
-    }
-    to {
-      opacity: 0;
-      transform: translateY(-10px);
-    }
-  }
-  @keyframes ah-pop {
-    from {
-      transform: scale(0.3);
-      opacity: 0;
-    }
-    60% {
-      transform: scale(1.2);
-    }
-  }
   @keyframes ah-settle {
     from {
       transform: scale(0.94);
     }
   }
-  @keyframes ah-shake {
-    20%,
-    60% {
-      transform: translateX(-4px);
+  .ah-overlay.ah-leaving {
+    animation: ah-fadeout 140ms cubic-bezier(0.4, 0, 1, 1) both;
+  }
+  .ah-leaving .ah-sheet {
+    animation: ah-sink 140ms cubic-bezier(0.4, 0, 1, 1) both;
+  }
+  .ah-sheet.ah-swap {
+    animation: ah-fade 120ms ease-out both;
+  }
+  @keyframes ah-fadeout {
+    to {
+      opacity: 0;
     }
-    40%,
-    80% {
-      transform: translateX(4px);
+  }
+  @keyframes ah-sink {
+    to {
+      opacity: 0;
+      transform: translateY(8px);
     }
   }
   @keyframes ah-fade {
@@ -1677,11 +1642,21 @@
     }
   }
 
+  /* reduced motion: nothing slides or bounces, but things still fade */
   @media (prefers-reduced-motion: reduce) {
     .ah *,
     .ah *::after {
       animation-duration: 1ms !important;
       animation-iteration-count: 1 !important;
+    }
+    .ah .ah-overlay,
+    .ah .ah-sheet,
+    .ah .ah-line {
+      animation: ah-fade 150ms ease-out both !important;
+    }
+    .ah .ah-overlay.ah-leaving,
+    .ah .ah-leaving .ah-sheet {
+      animation: ah-fadeout 140ms ease-in both !important;
     }
   }
 </style>

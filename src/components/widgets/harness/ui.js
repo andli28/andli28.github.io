@@ -38,8 +38,8 @@ const h = (tag, cls, html) => {
   return e;
 };
 const wait = ms => new Promise(r => setTimeout(r, ms));
-const reduced = () =>
-  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+const reduced = () => motion.matches;
 
 function load() {
   try {
@@ -206,7 +206,6 @@ export function mountHarness(root) {
     `<div class="ah-bot" data-face="idle"><span class="ah-ant"></span><span class="ah-body"><span class="ah-visor"><i></i><i></i></span></span></div><b>Model</b>`
   );
   const botEl = modelEl.querySelector(".ah-bot");
-  const dot = h("div", "ah-dot");
   map.append(wires);
   const branchEls = {};
   for (const b of BRANCHES) {
@@ -214,7 +213,7 @@ export function mountHarness(root) {
     branchEls[b.id] = e;
     map.append(e);
   }
-  map.append(modelEl, dot);
+  map.append(modelEl);
 
   // the trace side
   const side = h("div", "ah-side");
@@ -466,11 +465,21 @@ export function mountHarness(root) {
   function ping(id) {
     const e = elOf(id);
     if (!e) return;
-    e.classList.remove("ah-ping");
-    void e.offsetWidth;
-    e.classList.add("ah-ping");
+    for (const a of e.getAnimations()) if (a.id === "ping") a.cancel();
+    e.animate(
+      [
+        { transform: "scale(1)" },
+        { transform: "scale(1.08)", offset: 0.4 },
+        { transform: "scale(1)" },
+      ],
+      { duration: 360, easing: "cubic-bezier(0.23, 1, 0.32, 1)", id: "ping" }
+    );
   }
   const still = () => reduced() || state.fast;
+  // signals in the air, so Skip can land them at once
+  const flying = new Set();
+  // how many signals each wire is carrying, per direction
+  const carrying = {};
   // A signal crossing a section's wire: "in" towards the model, "out" away
   // from it. Resolves when it lands.
   async function travel(part, dir = "in") {
@@ -478,8 +487,12 @@ export function mountHarness(root) {
     if (!g || !elOf(part) || still())
       return ping(dir === "in" ? "model" : part);
     const dur = PACE.signal / state.speed;
-    const wire = wires.querySelector(`[data-wire="${PARTS[part].branch}"]`);
-    wire?.classList.add(dir === "in" ? "ah-flowin" : "ah-flowout");
+    const branch = PARTS[part].branch;
+    const cls = dir === "in" ? "ah-flowin" : "ah-flowout";
+    const key = `${branch} ${cls}`;
+    const wire = () => wires.querySelector(`[data-wire="${branch}"]`);
+    carrying[key] = (carrying[key] || 0) + 1;
+    wire()?.classList.add(cls);
     const at = t => {
       const u = dir === "in" ? t : 1 - t;
       const x =
@@ -488,28 +501,33 @@ export function mountHarness(root) {
         (1 - u) ** 2 * g.p0.y + 2 * (1 - u) * u * g.c.y + u * u * g.p1.y;
       return `translate(${x}px, ${y}px)`;
     };
-    // the lead dot and two smaller ones behind it
+    // the lead dot and two smaller ones behind it, spaced the same at any
+    // speed
     const dots = [0, 1, 2].map(i => {
-      const d = h("div", `ah-dot ah-c-${PARTS[part].branch}`);
+      const d = h("div", `ah-dot ah-c-${branch}`);
       map.append(d);
       const frames = [0, 0.2, 0.4, 0.6, 0.8, 1].map(t => ({
         transform: `${at(t)} scale(${1 - i * 0.25})`,
         opacity: t === 0 || t === 1 ? 0 : 1,
         offset: t,
       }));
-      return d
-        .animate(frames, {
-          duration: dur,
-          delay: i * 55,
-          easing: "cubic-bezier(0.45, 0, 0.25, 1)",
-        })
-        .finished.then(
-          () => d.remove(),
-          () => d.remove()
-        );
+      const a = d.animate(frames, {
+        duration: dur,
+        delay: i * dur * 0.16,
+        easing: "cubic-bezier(0.45, 0, 0.25, 1)",
+      });
+      flying.add(a);
+      const done = () => {
+        flying.delete(a);
+        d.remove();
+      };
+      return a.finished.then(done, done);
+    });
+    // the wire stops flowing when its last signal has fully landed
+    Promise.all(dots).then(() => {
+      if (!--carrying[key]) wire()?.classList.remove(cls);
     });
     await dots[0];
-    wire?.classList.remove("ah-flowin", "ah-flowout");
     ping(dir === "in" ? "model" : part);
   }
   const flow = async (part, dirs = FLOW[part] || ["in"]) => {
@@ -605,13 +623,26 @@ export function mountHarness(root) {
   }
 
   // ---------- parts ----------
+  // Switching a part changes the button that is already there, so its
+  // transition plays and it keeps the keyboard focus.
+  function syncParts(ids) {
+    for (const id of ids) {
+      const e = elOf(id);
+      if (!e) continue;
+      e.classList.toggle("ah-on", isOn(id));
+      e.classList.toggle("ah-off", !isOn(id));
+      e.classList.remove("ah-hinted", "ah-new", "ah-lit");
+      e.setAttribute("aria-pressed", String(isOn(id)));
+    }
+    requestAnimationFrame(drawWires);
+  }
   function toggle(id) {
     const set = wired();
     if (set.includes(id)) state.on[task().id] = set.filter(x => x !== id);
     else set.push(id);
     blip(isOn(id) ? 520 : 400, 0.05, "triangle");
     save();
-    draw();
+    syncParts([id]);
     note(`${PARTS[id].name}${isOn(id) ? "" : ", off"}. ${PARTS[id].short}`);
   }
 
@@ -650,13 +681,15 @@ export function mountHarness(root) {
   }
   // After a failed run: what went wrong, and the change that addresses it.
   function explain(d) {
+    if (d.final) return `Failed: ${d.what}`;
     if (d.part) return `Failed: ${d.what} ${suggest(d.part, d.turn)}`;
-    const off = d.missing.filter(owns);
-    if (!off.length && !d.extra.length)
+    // only an exact match with the tested harness is the model's own slip
+    if (!d.missing.length && !d.extra.length)
       return `Failed: ${d.what} This is the harness the level is tested with, so the slip is the model's own. The trace shows where.`;
-    for (const id of [...off, ...d.extra]) elOf(id)?.classList.add("ah-hinted");
+    for (const id of [...d.missing, ...d.extra])
+      elOf(id)?.classList.add("ah-hinted");
     const diff = [
-      off.length && `${names(off)} off`,
+      d.missing.length && `${names(d.missing)} off`,
       d.extra.length && `${names(d.extra)} on`,
     ].filter(Boolean);
     return `Failed: ${d.what} This level is tested with ${names(tested(task()))}; you have ${diff.join(" and ")}.`;
@@ -670,68 +703,93 @@ export function mountHarness(root) {
     state.on[task().id] = on ? [...set, ...ids] : set;
     blip(on ? 520 : 400, 0.05, "triangle");
     save();
-    draw();
+    syncParts(ids);
     note(`${on ? "Connected" : "Disconnected"} ${names(ids)}.`);
   }
   // Drag a window over the board to pick the parts under it. Mouse and pen
   // only: a finger dragging here scrolls the page.
   let drag = null;
-  const touched = box =>
-    [...map.querySelectorAll("[data-part]")].filter(e => {
-      const r = e.getBoundingClientRect();
-      return (
-        r.left < box.right &&
-        r.right > box.left &&
-        r.top < box.bottom &&
-        r.bottom > box.top
-      );
-    });
-  map.addEventListener("pointerdown", ev => {
-    if (state.running || ev.pointerType === "touch" || ev.button !== 0) return;
-    drag = { x: ev.clientX, y: ev.clientY, id: ev.pointerId, el: null };
-  });
-  map.addEventListener("pointermove", ev => {
-    if (!drag || ev.pointerId !== drag.id) return;
-    const dx = ev.clientX - drag.x;
-    const dy = ev.clientY - drag.y;
-    if (!drag.el) {
-      if (Math.hypot(dx, dy) < 6) return;
-      drag.el = h("div", "ah-marquee");
-      map.append(drag.el);
-      map.setPointerCapture(drag.id);
-    }
-    const m = map.getBoundingClientRect();
-    const box = {
-      left: Math.min(drag.x, ev.clientX),
-      top: Math.min(drag.y, ev.clientY),
-      right: Math.max(drag.x, ev.clientX),
-      bottom: Math.max(drag.y, ev.clientY),
-    };
-    Object.assign(drag.el.style, {
-      left: `${box.left - m.left}px`,
-      top: `${box.top - m.top}px`,
-      width: `${box.right - box.left}px`,
-      height: `${box.bottom - box.top}px`,
-    });
-    const hit = touched(box);
-    for (const e of map.querySelectorAll("[data-part]"))
-      e.classList.toggle("ah-lit", hit.includes(e));
-    drag.hit = hit.map(e => e.dataset.part);
-  });
-  const drop = ev => {
-    if (!drag || ev.pointerId !== drag.id) return;
-    const { el, hit = [] } = drag;
+  const unlight = () => {
+    for (const e of map.querySelectorAll(".ah-lit"))
+      e.classList.remove("ah-lit");
+  };
+  const endDrag = commit => {
+    const d = drag;
     drag = null;
-    if (!el) return;
-    el.remove();
+    if (!d?.el) return;
+    cancelAnimationFrame(d.raf);
+    d.el.remove();
+    unlight();
     // the click that ends a drag is not a tap on a part
     state.dragged = true;
     setTimeout(() => (state.dragged = false));
-    if (ev.type === "pointerup") toggleMany(hit);
-    else draw();
+    if (commit) toggleMany(d.hit);
   };
-  map.addEventListener("pointerup", drop);
-  map.addEventListener("pointercancel", drop);
+  map.addEventListener("pointerdown", ev => {
+    // a drag that was never finished (released outside the board) ends here
+    endDrag(false);
+    if (state.running || ev.pointerType === "touch" || ev.button !== 0) return;
+    drag = {
+      x: ev.clientX,
+      y: ev.clientY,
+      id: ev.pointerId,
+      el: null,
+      hit: [],
+    };
+  });
+  map.addEventListener("pointermove", ev => {
+    if (!drag || ev.pointerId !== drag.id) return;
+    // the button came up somewhere we never heard about
+    if (!ev.buttons) return endDrag(false);
+    if (!drag.el) {
+      if (Math.hypot(ev.clientX - drag.x, ev.clientY - drag.y) < 6) return;
+      drag.el = h("div", "ah-marquee");
+      map.append(drag.el);
+      map.setPointerCapture(drag.id);
+      // where everything is, measured once for the whole drag
+      drag.map = map.getBoundingClientRect();
+      drag.rects = [...map.querySelectorAll("[data-part]")].map(e => [
+        e,
+        e.getBoundingClientRect(),
+      ]);
+    }
+    drag.to = { x: ev.clientX, y: ev.clientY };
+    drag.raf ||= requestAnimationFrame(() => {
+      const d = drag;
+      if (!d?.el) return;
+      d.raf = 0;
+      const box = {
+        left: Math.min(d.x, d.to.x),
+        top: Math.min(d.y, d.to.y),
+        right: Math.max(d.x, d.to.x),
+        bottom: Math.max(d.y, d.to.y),
+      };
+      Object.assign(d.el.style, {
+        left: `${box.left - d.map.left}px`,
+        top: `${box.top - d.map.top}px`,
+        width: `${box.right - box.left}px`,
+        height: `${box.bottom - box.top}px`,
+      });
+      const hit = d.rects.filter(
+        ([, r]) =>
+          r.left < box.right &&
+          r.right > box.left &&
+          r.top < box.bottom &&
+          r.bottom > box.top
+      );
+      const ids = hit.map(([e]) => e.dataset.part);
+      if (ids.join() === d.hit.join()) return;
+      d.hit = ids;
+      for (const [e] of d.rects)
+        e.classList.toggle("ah-lit", ids.includes(e.dataset.part));
+    });
+  });
+  map.addEventListener("pointerup", ev => {
+    if (drag && ev.pointerId === drag.id) endDrag(true);
+  });
+  map.addEventListener("pointercancel", ev => {
+    if (drag && ev.pointerId === drag.id) endDrag(false);
+  });
 
   map.addEventListener("click", ev => {
     if (state.running || state.dragged) return;
@@ -745,6 +803,8 @@ export function mountHarness(root) {
   runBtn.addEventListener("click", () => {
     if (state.running) {
       state.fast = true;
+      // whatever is in the air lands now
+      for (const a of [...flying]) a.finish();
       return;
     }
     run();
@@ -940,7 +1000,9 @@ export function mountHarness(root) {
           ? "Every eval passes."
           : "Every eval passes. That's the whole harness."
       );
-      showCleared(res, first);
+      // let the win show before the card covers it
+      if (!still()) await wait(650);
+      if (alive()) showCleared(res, first);
     } else {
       botEl.dataset.face = "sad";
       blip(160, 0.2, "sawtooth", 0.04);
@@ -972,18 +1034,30 @@ export function mountHarness(root) {
   }
 
   // ---------- overlays ----------
+  let leaving = 0;
   function closeOverlay() {
-    overlay.hidden = true;
-    overlay.innerHTML = "";
+    if (overlay.hidden || leaving) return;
+    overlay.classList.add("ah-leaving");
+    leaving = setTimeout(() => {
+      leaving = 0;
+      overlay.classList.remove("ah-leaving");
+      overlay.hidden = true;
+      overlay.innerHTML = "";
+    }, 140);
   }
   overlay.addEventListener("click", ev => {
     if (ev.target === overlay) closeOverlay();
   });
 
   const sheet = label => {
+    // a sheet opening over one that is already up fades in place
+    const swap = !overlay.hidden && !leaving;
+    clearTimeout(leaving);
+    leaving = 0;
+    overlay.classList.remove("ah-leaving");
     overlay.innerHTML = "";
     overlay.hidden = false;
-    const s = h("div", "ah-sheet");
+    const s = h("div", `ah-sheet${swap ? " ah-swap" : ""}`);
     s.setAttribute("role", "dialog");
     s.setAttribute("aria-label", label);
     overlay.append(s);
@@ -1065,26 +1139,33 @@ export function mountHarness(root) {
       void notesBtn.offsetWidth;
       notesBtn.classList.add("ah-bump");
       clearTimeout(state.bump);
-      state.bump = setTimeout(() => notesBtn.classList.remove("ah-bump"), 2300);
+      state.bump = setTimeout(() => notesBtn.classList.remove("ah-bump"), 1700);
     };
     if (reduced()) return land();
-    const from = s.querySelector(".ah-added").getBoundingClientRect();
-    const to = notesBtn.getBoundingClientRect();
-    const fly = h("div", `ah-fly ah-c-${P.branch}`, icon(id));
-    root.append(fly);
-    const at = r =>
-      `translate(${r.left + r.width / 2 - 18}px, ${r.top + r.height / 2 - 18}px)`;
-    fly
-      .animate(
-        [
-          { transform: `${at(from)} scale(0.6)`, opacity: 0 },
-          { transform: `${at(from)} scale(1.15)`, opacity: 1, offset: 0.25 },
-          { transform: `${at(to)} scale(0.5)`, opacity: 1 },
-        ],
-        { duration: 900, delay: 350, easing: "cubic-bezier(0.5, 0, 0.2, 1)" }
-      )
-      .finished.then(land, land)
-      .finally(() => fly.remove());
+    // measure once the sheet has stopped rising
+    wait(260).then(() => {
+      if (s.isConnected) fly(s.querySelector(".ah-added"));
+      else land();
+    });
+    function fly(added) {
+      const from = added.getBoundingClientRect();
+      const to = notesBtn.getBoundingClientRect();
+      const tile = h("div", `ah-fly ah-c-${P.branch}`, icon(id));
+      root.append(tile);
+      const at = r =>
+        `translate(${r.left + r.width / 2 - 18}px, ${r.top + r.height / 2 - 18}px)`;
+      tile
+        .animate(
+          [
+            { transform: `${at(from)} scale(0.6)`, opacity: 0 },
+            { transform: `${at(from)} scale(1.15)`, opacity: 1, offset: 0.25 },
+            { transform: `${at(to)} scale(0.5)`, opacity: 1 },
+          ],
+          { duration: 900, delay: 80, easing: "cubic-bezier(0.5, 0, 0.2, 1)" }
+        )
+        .finished.then(land, land)
+        .finally(() => tile.remove());
+    }
   }
 
   // The end of the game: the whole idea in one screen.

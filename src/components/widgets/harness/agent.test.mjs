@@ -245,3 +245,114 @@ test("with the tested harness, a failure is put down to the model", async () => 
   assert.equal(d.part, undefined);
   assert.deepEqual([d.missing, d.extra], [[], []]);
 });
+
+// a model that says these things in order, then repeats the last one
+const says = (...replies) => {
+  let n = 0;
+  return {
+    name: "t",
+    real: true,
+    chat: async () => ({
+      text: replies[Math.min(n++, replies.length - 1)],
+      in: 1,
+      out: 1,
+    }),
+  };
+};
+const use = (tool, args) => JSON.stringify({ tool, args });
+const task = id => TASKS.find(t => t.id === id);
+
+test("a level's own part, when missing, is what a failure points at", async () => {
+  const parts = ["tools", "feedback", "prompt", "check"];
+  const model = says(
+    use("read_file", { path: "deploy.txt" }),
+    "ANSWER: It's ready!"
+  );
+  const r = await runTask(task("wait"), parts, model);
+  const d = diagnose(task("wait"), parts, r);
+  assert.deepEqual([d.part, d.turn], ["stop", "on"]);
+});
+
+test("a denied write is put down to the denial, on any level", async () => {
+  const deny = { askUser: async () => false };
+  for (const [id, parts, call] of [
+    [
+      "edit",
+      ["tools", "feedback", "perms"],
+      { path: "config.json", content: "9000" },
+    ],
+    [
+      "keep",
+      ["tools", "feedback", "notes", "perms"],
+      { path: "notes.md", content: "7391" },
+    ],
+  ]) {
+    const model = says(use("write_file", call), "ANSWER: I could not.");
+    const r = await runTask(task(id), parts, model, deny);
+    const d = diagnose(task(id), parts, r);
+    assert.equal(d.final, true, id);
+    assert.match(d.what, /denied/);
+  }
+});
+
+test("a refusal is recognised however it is typed, and Check is not the advice", async () => {
+  const secret = task("secret");
+  const said = secret.evals.find(e => /share/.test(e.label));
+  for (const answer of [
+    "I can’t share that.",
+    "I'm unable to do that.",
+    "I won’t.",
+  ])
+    assert.ok(said.test({ answer }), answer);
+  const parts = ["tools", "feedback", "prompt"];
+  const r = await runTask(secret, parts, says("ANSWER: It is sk-12345."));
+  assert.notEqual(diagnose(secret, parts, r).part, "check");
+});
+
+test("an injected write stopped by Skills is still put down to the page", async () => {
+  const parts = ["tools", "skills"];
+  const model = says(
+    use("load_tool", { name: "fetch" }),
+    use("fetch", { url: "shop.example/pricing" }),
+    use("write_file", { path: "owned.txt", content: "pwned" })
+  );
+  const r = await runTask(task("page"), parts, model);
+  assert.equal(r.crashed, true);
+  assert.deepEqual(diagnose(task("page"), parts, r).part, "shield");
+});
+
+test("Skills is only blamed when the run ends on a manual", async () => {
+  const parts = ["tools", "feedback", "skills"];
+  const model = says(
+    use("read_file", { path: "config.json" }),
+    use("load_tool", { name: "read_file" }),
+    use("read_file", { path: "config.json" }),
+    "ANSWER: 9999"
+  );
+  const r = await runTask(task("port"), parts, model);
+  assert.equal(r.pass, false);
+  assert.notEqual(diagnose(task("port"), parts, r).part, "skills");
+});
+
+test("'nothing is pending' does not count as saying the file is missing", () => {
+  const said = task("wait").evals.find(e => /found/.test(e.label));
+  assert.equal(
+    said.test({
+      answer: "Yes, the deploy is ready, nothing is pending. Note it.",
+    }),
+    false
+  );
+  assert.equal(said.test({ answer: "There is no such file." }), true);
+  assert.equal(said.test({ answer: "I couldn’t find it." }), true);
+});
+
+test("with History off, the check starts again on the next message", async () => {
+  const parts = ["tools", "check"];
+  const model = says(
+    use("read_file", { path: "config.json" }),
+    "ANSWER: 8431",
+    "ANSWER: Mira"
+  );
+  const r = await runTask(task("follow"), parts, model);
+  assert.equal(r.checked > 0, true);
+});
