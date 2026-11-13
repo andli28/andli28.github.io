@@ -7,21 +7,40 @@
 // shown as a picture-in-picture video; its play/pause button drives the
 // timer.
 
-import { DIAL_MS, fmtClock } from "./focus-shared.js";
+import { DIAL_MS, fmtClock, wedgePath } from "./focus-shared.js";
 
-// The little fruit, in a -40..40 box: same parts as the big dial.
-const FRUIT_R = { skin: 32, rind: 27, face: 24, wedge: 21, hub: 7 };
-
-/** A pie slice from 12 o'clock, clockwise, for `frac` of a full turn. */
-function pie(frac, r) {
-  if (frac <= 0) return "";
-  if (frac >= 0.9999) {
-    return `M0,${-r}A${r},${r} 0 1 1 0,${r}A${r},${r} 0 1 1 0,${-r}Z`;
+// Styles for the fruit SVG copied from the dial (see fruitArt in
+// focus-timer.js), which carries its colors as --fruit-* variables. Keep in
+// step with the dial's part styles in FocusTimer.astro.
+const ART_CSS = `
+  .ft-skin { fill: var(--fruit-skin); }
+  .ft-skin-shade { fill: var(--fruit-shade); }
+  .ft-rind { fill: var(--fruit-rind); }
+  .ft-face { fill: var(--fruit-face); }
+  .ft-face-shade { fill: var(--fruit-face-shade); }
+  .ft-leaf { fill: var(--fruit-leaf); }
+  .ft-stem { fill: var(--fruit-stem); }
+  .ft-stem-line {
+    fill: none;
+    stroke: var(--fruit-stem);
+    stroke-width: 9;
+    stroke-linecap: round;
   }
-  const a = frac * Math.PI * 2;
-  const x = (r * Math.sin(a)).toFixed(2);
-  const y = (-r * Math.cos(a)).toFixed(2);
-  return `M0,0L0,${-r}A${r},${r} 0 ${a > Math.PI ? 1 : 0} 1 ${x},${y}Z`;
+  .ft-stripe { stroke: var(--fruit-shade); stroke-width: 15; stroke-linecap: round; }
+  .ft-dimple { fill: var(--fruit-shade); opacity: 0.55; }
+  .ft-seed { fill: #2a1c18; }
+  .ft-wedge { fill: var(--ft-wedge); }
+  .ft-hub-disc { fill: #18181c; }
+`;
+
+/** The fruit as a standalone SVG document, with the wedge drawn in. */
+function artDocument(art, frac) {
+  return art
+    .replace(
+      /^<svg([^>]*)>/,
+      `<svg$1 width="360" height="394"><style>${ART_CSS}</style>`
+    )
+    .replace('class="ft-wedge"', `class="ft-wedge" d="${wedgePath(frac)}"`);
 }
 
 const hasDocumentPip = () =>
@@ -67,8 +86,9 @@ const MINI_CSS = `
     background: rgb(${THEME.dark.ink});
     color: ${THEME.dark.bg};
   }
-  .fruit { width: 64px; height: 72px; }
-  .fruit * { transition: fill 200ms ease; }
+  .fruit { width: 64px; height: 70px; }
+  .fruit svg { display: block; width: 100%; height: 100%; }
+  ${ART_CSS}
   .text { min-width: 0; }
   .time {
     font-size: 30px;
@@ -191,25 +211,14 @@ export function createMini({ onToggle, onTick, onClose }) {
     style.textContent = MINI_CSS;
     doc.head.append(style);
     doc.body.innerHTML = `
-      <svg class="fruit" viewBox="-40 -48 80 90" aria-hidden="true">
-        <ellipse data-part="leaf" cx="11" cy="-38" rx="11" ry="5"
-          transform="rotate(-20 3 -36)"></ellipse>
-        <rect data-part="stem" x="-2.5" y="-43" width="5" height="14" rx="2.5"></rect>
-        <circle data-part="shade" r="${FRUIT_R.skin}" cy="3"></circle>
-        <circle data-part="skin" r="${FRUIT_R.skin}"></circle>
-        <circle data-part="rind" r="${FRUIT_R.rind}"></circle>
-        <circle data-part="face" r="${FRUIT_R.face}"></circle>
-        <path data-part="wedge"></path>
-        <circle r="${FRUIT_R.hub}" fill="#18181c"></circle>
-      </svg>
+      <div class="fruit" aria-hidden="true"></div>
       <div class="text">
         <div class="time" role="timer"></div>
         <div class="label"></div>
       </div>
       <button type="button"></button>`;
-    nodes.parts = Object.fromEntries(
-      [...doc.querySelectorAll("[data-part]")].map(n => [n.dataset.part, n])
-    );
+    nodes.fruit = doc.querySelector(".fruit");
+    nodes.art = null; // a new window: draw the fruit into it
     nodes.time = doc.querySelector(".time");
     nodes.label = doc.querySelector(".label");
     nodes.button = doc.querySelector("button");
@@ -283,17 +292,19 @@ export function createMini({ onToggle, onTick, onClose }) {
     const time = fmtClock(left);
     // Same scale as the big dial: a full ring is 60 minutes.
     const frac = Math.min(1, left / DIAL_MS);
-    const key = `${time}|${frac.toFixed(3)}|${view.label}|${view.running}|${view.started}|${view.mode}|${Object.values(view.colors).join()}|${view.dark}`;
+    const key = `${time}|${frac.toFixed(3)}|${view.label}|${view.running}|${view.started}|${view.mode}|${view.artKey}|${view.dark}`;
     if (key === painted) return;
     painted = key;
     if (pip) {
       const body = pip.document.body;
       body.toggleAttribute("data-paused", !view.running && view.started);
       body.dataset.theme = view.dark ? "dark" : "light";
-      for (const [part, node] of Object.entries(nodes.parts)) {
-        node.setAttribute("fill", view.colors[part]);
+      if (nodes.art !== view.art) {
+        nodes.art = view.art;
+        nodes.fruit.innerHTML = view.art;
+        nodes.wedge = nodes.fruit.querySelector(".ft-wedge");
       }
-      nodes.parts.wedge.setAttribute("d", pie(frac, FRUIT_R.wedge));
+      nodes.wedge.setAttribute("d", wedgePath(frac));
       nodes.time.textContent = time;
       nodes.label.textContent = view.label;
       nodes.button.innerHTML = view.running ? ICON_PAUSE : ICON_PLAY;
@@ -306,59 +317,32 @@ export function createMini({ onToggle, onTick, onClose }) {
     }
   }
 
+  // The fruit is drawn from the same SVG as the Document PiP window, as an
+  // image; frames that finish loading out of order are dropped.
+  let drawSeq = 0;
   function draw(time, frac) {
+    const seq = ++drawSeq;
+    const shown = view;
+    const img = new Image();
+    img.onload = () => {
+      if (seq === drawSeq && canvas) drawFrame(time, img, shown);
+    };
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+      artDocument(shown.art, frac)
+    )}`;
+  }
+
+  function drawFrame(time, img, shown) {
     const ctx = canvas.getContext("2d");
     const { width: w, height: h } = canvas;
-    const c = view.colors;
-    const theme = THEME[view.dark ? "dark" : "light"];
+    const theme = THEME[shown.dark ? "dark" : "light"];
     ctx.fillStyle = theme.bg;
     ctx.fillRect(0, 0, w, h);
-
-    // The little fruit, at 2.2x the document window's scale.
-    ctx.save();
-    ctx.translate(100, h / 2 + 12);
-    ctx.scale(2.2, 2.2);
-    const disc = (r, fill, cy = 0) => {
-      ctx.fillStyle = fill;
-      ctx.beginPath();
-      ctx.arc(0, cy, r, 0, Math.PI * 2);
-      ctx.fill();
-    };
-    ctx.save();
-    ctx.translate(3, -36);
-    ctx.rotate((-20 * Math.PI) / 180);
-    ctx.fillStyle = c.leaf;
-    ctx.beginPath();
-    ctx.ellipse(8, -2, 11, 5, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-    ctx.fillStyle = c.stem;
-    ctx.beginPath();
-    ctx.roundRect(-2.5, -43, 5, 14, 2.5);
-    ctx.fill();
-    disc(FRUIT_R.skin, c.shade, 3);
-    disc(FRUIT_R.skin, c.skin);
-    disc(FRUIT_R.rind, c.rind);
-    disc(FRUIT_R.face, c.face);
-    if (frac > 0) {
-      ctx.fillStyle = c.wedge;
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.arc(
-        0,
-        0,
-        FRUIT_R.wedge,
-        -Math.PI / 2,
-        -Math.PI / 2 + frac * Math.PI * 2
-      );
-      ctx.closePath();
-      ctx.fill();
-    }
-    disc(FRUIT_R.hub, "#18181c");
-    ctx.restore();
+    const artH = h - 16;
+    ctx.drawImage(img, 16, 8, (artH * 360) / 394, artH);
 
     ctx.fillStyle =
-      view.running || !view.started
+      shown.running || !shown.started
         ? `rgb(${theme.ink})`
         : `rgba(${theme.ink}, 0.5)`;
     ctx.font = "600 64px ui-monospace, Menlo, monospace";
@@ -367,7 +351,7 @@ export function createMini({ onToggle, onTick, onClose }) {
     ctx.fillStyle = `rgba(${theme.ink}, 0.6)`;
     ctx.font = "italic 28px Georgia, serif";
     const label =
-      view.label.length > 26 ? `${view.label.slice(0, 25)}…` : view.label;
+      shown.label.length > 26 ? `${shown.label.slice(0, 25)}…` : shown.label;
     ctx.fillText(label, 202, h / 2 + 52);
   }
 

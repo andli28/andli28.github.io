@@ -8,7 +8,13 @@
 
 import { blockAt, buildPlan, describePlan } from "./focus-plan.js";
 import { createMini, miniSupported } from "./focus-mini.js";
-import { DIAL_MS, FRUITS, MIN, fmtClock, fruitColors } from "./focus-shared.js";
+import {
+  DIAL_MS,
+  FRUIT_IDS,
+  MIN,
+  fmtClock,
+  wedgePath,
+} from "./focus-shared.js";
 
 const STORAGE_KEY = "lab-focus-timer-v2";
 const DEFAULTS = { focus: 25, short: 5, long: 15, every: 4 };
@@ -19,7 +25,6 @@ const LIMITS = {
   every: [2, 12],
 };
 const HISTORY_DAYS = 30;
-const WEDGE_R = 132;
 const SWEEP_PHASE_MS = 600; // a session ending: rare, can take its time
 const SWEEP_SWITCH_MS = 260; // clicking a mode tab: a UI response
 const TOAST_MS = 5000;
@@ -71,18 +76,6 @@ const fmtTime = ts =>
   new Date(ts)
     .toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
     .toLowerCase();
-
-function wedgePath(ms) {
-  const frac = Math.min(1, Math.max(0, ms / DIAL_MS));
-  if (frac <= 0) return "";
-  if (frac >= 0.9999) {
-    return `M0,${-WEDGE_R}A${WEDGE_R},${WEDGE_R} 0 1 1 0,${WEDGE_R}A${WEDGE_R},${WEDGE_R} 0 1 1 0,${-WEDGE_R}Z`;
-  }
-  const a = frac * Math.PI * 2;
-  const x = (WEDGE_R * Math.sin(a)).toFixed(2);
-  const y = (-WEDGE_R * Math.cos(a)).toFixed(2);
-  return `M0,0L0,${-WEDGE_R}A${WEDGE_R},${WEDGE_R} 0 ${a > Math.PI ? 1 : 0} 1 ${x},${y}Z`;
-}
 
 function clampSetting(key, value) {
   const [lo, hi] = LIMITS[key];
@@ -169,7 +162,7 @@ export function mountFocusTimer(root) {
   const state = {
     log: Array.isArray(saved.log) ? saved.log : [],
     sound: saved.sound ?? false,
-    fruit: FRUITS[saved.fruit] ? saved.fruit : "tomato",
+    fruit: FRUIT_IDS.includes(saved.fruit) ? saved.fruit : "tomato",
     notify: saved.notify ?? false,
     settings,
     plan: saved.plan?.blocks?.length ? saved.plan : null,
@@ -209,6 +202,48 @@ export function mountFocusTimer(root) {
     onClose: () => render(),
   });
 
+  // The pop-out draws the same fruit as the dial: a copy of the dial's SVG
+  // without the ticks, numerals, hand and the other fruits' parts, carrying
+  // the fruit's colors as resolved from the page's CSS. Rebuilt only when
+  // the fruit or the mode (which colors the wedge) changes.
+  const ART_VARS = [
+    "--fruit-skin",
+    "--fruit-shade",
+    "--fruit-rind",
+    "--fruit-face",
+    "--fruit-face-shade",
+    "--fruit-leaf",
+    "--fruit-stem",
+    "--ft-wedge",
+  ];
+  let art = { key: "", svg: "" };
+  function fruitArt() {
+    const { fruit, mode } = root.dataset;
+    const key = `${fruit}|${mode}`;
+    if (art.key === key) return art.svg;
+    const css = getComputedStyle(root);
+    const svg = el.dial.querySelector("svg").cloneNode(true);
+    for (const n of svg.querySelectorAll(".ft-tick, .ft-num, .ft-hand")) {
+      n.remove();
+    }
+    for (const n of svg.querySelectorAll("[data-fruit-only]")) {
+      if (n.dataset.fruitOnly === fruit) n.removeAttribute("data-fruit-only");
+      else n.remove();
+    }
+    const wedge = svg.querySelector(".ft-wedge");
+    wedge.removeAttribute("d");
+    wedge.removeAttribute("data-ft");
+    svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    // Room for the stem and leaves above the body.
+    svg.setAttribute("viewBox", "-180 -212 360 394");
+    svg.setAttribute(
+      "style",
+      ART_VARS.map(v => `${v}:${css.getPropertyValue(v).trim()}`).join(";")
+    );
+    art = { key, svg: svg.outerHTML };
+    return art.svg;
+  }
+
   function miniView() {
     const left = Math.max(0, remainingMs());
     const focus = state.mode === "focus";
@@ -222,7 +257,8 @@ export function mountFocusTimer(root) {
       mode: state.mode,
       running: state.running,
       started: inProgress(),
-      colors: fruitColors(state.fruit, focus),
+      art: fruitArt(),
+      artKey: art.key,
       dark: document.documentElement.dataset.theme === "dark",
     };
   }
@@ -1111,7 +1147,7 @@ export function mountFocusTimer(root) {
   // ---- Rendering ---------------------------------------------------------
 
   function drawDial(ms) {
-    el.wedge.setAttribute("d", wedgePath(ms));
+    el.wedge.setAttribute("d", wedgePath(ms / DIAL_MS));
     const deg = (Math.min(ms, DIAL_MS) / DIAL_MS) * 360;
     el.hand.setAttribute("transform", `rotate(${deg.toFixed(2)})`);
   }
