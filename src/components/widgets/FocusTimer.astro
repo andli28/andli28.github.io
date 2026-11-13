@@ -507,16 +507,17 @@ const FRUITS = [
   .ft[data-fruit="watermelon"] [data-fruit-only="watermelon"] {
     display: inline;
   }
+  /* The back link sits outside .ft, so it can't read the --ft-* tokens. */
   .lab-full:has(.ft) .lab-back {
-    color: var(--ft-dim);
+    color: rgb(34 31 28 / 0.58);
   }
   @media (hover: hover) and (pointer: fine) {
     .lab-full:has(.ft) .lab-back:hover {
-      color: var(--ft-ink);
+      color: rgb(34 31 28);
     }
   }
   .lab-full:has(.ft) .lab-back:focus-visible {
-    color: var(--ft-ink);
+    color: rgb(34 31 28);
   }
 
   /* Light behind the dial; dims as the session runs out. One layer per

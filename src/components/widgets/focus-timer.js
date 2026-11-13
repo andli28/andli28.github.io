@@ -8,7 +8,7 @@
 
 import { blockAt, buildPlan, describePlan } from "./focus-plan.js";
 import { createMini, miniSupported } from "./focus-mini.js";
-import { DIAL_MS, FRUITS, MIN, fmtClock, modeColors } from "./focus-shared.js";
+import { DIAL_MS, FRUITS, MIN, fmtClock, fruitColors } from "./focus-shared.js";
 
 const STORAGE_KEY = "lab-focus-timer-v2";
 const DEFAULTS = { focus: 25, short: 5, long: 15, every: 4 };
@@ -225,9 +225,7 @@ export function mountFocusTimer(root) {
       mode: state.mode,
       running: state.running,
       started: inProgress(),
-      ...modeColors(state.fruit, focus),
-      glowFocus: modeColors(state.fruit, true).glow,
-      glowBreak: modeColors(state.fruit, false).glow,
+      colors: fruitColors(state.fruit, focus),
     };
   }
 

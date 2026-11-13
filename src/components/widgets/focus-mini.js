@@ -1,14 +1,28 @@
 // A small always-on-top timer window ("pop out").
 //
 // Chrome/Edge: Document Picture-in-Picture, a real mini window with a
-// progress ring, the time, the task and a pause button.
+// little fruit dial (the same fruit as the page), the time, the task and a
+// pause button.
 // Safari and others with video PiP: the same view drawn on a canvas and
 // shown as a picture-in-picture video; its play/pause button drives the
 // timer.
 
 import { DIAL_MS, fmtClock } from "./focus-shared.js";
 
-const RING = 2 * Math.PI * 30;
+// The little fruit, in a -40..40 box: same parts as the big dial.
+const FRUIT_R = { skin: 32, rind: 27, face: 24, wedge: 21, hub: 7 };
+
+/** A pie slice from 12 o'clock, clockwise, for `frac` of a full turn. */
+function pie(frac, r) {
+  if (frac <= 0) return "";
+  if (frac >= 0.9999) {
+    return `M0,${-r}A${r},${r} 0 1 1 0,${r}A${r},${r} 0 1 1 0,${-r}Z`;
+  }
+  const a = frac * Math.PI * 2;
+  const x = (r * Math.sin(a)).toFixed(2);
+  const y = (-r * Math.cos(a)).toFixed(2);
+  return `M0,0L0,${-r}A${r},${r} 0 ${a > Math.PI ? 1 : 0} 1 ${x},${y}Z`;
+}
 
 const hasDocumentPip = () =>
   typeof window !== "undefined" && "documentPictureInPicture" in window;
@@ -20,8 +34,10 @@ const hasVideoPip = () =>
 
 export const miniSupported = () => hasDocumentPip() || hasVideoPip();
 
+const INK = "34, 31, 28";
+
 const MINI_CSS = `
-  :root { color-scheme: dark; }
+  :root { color-scheme: light; }
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; }
   body {
@@ -29,42 +45,15 @@ const MINI_CSS = `
     grid-template-columns: auto 1fr auto;
     align-items: center;
     gap: 14px;
-    padding: 14px 16px;
-    background: #0b0b0d;
-    color: #ece8e1;
+    padding: 12px 16px;
+    background: #f0eeea;
+    color: rgb(${INK});
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
     user-select: none;
     overflow: hidden;
   }
-  /* One glow layer per mode, crossfaded (gradients can't be animated). */
-  body::before,
-  body::after {
-    position: fixed;
-    inset: 0;
-    content: "";
-    pointer-events: none;
-    transition: opacity 300ms ease;
-  }
-  body::before {
-    background: radial-gradient(circle at 20% 50%, var(--glow-focus) 0, transparent 60%);
-  }
-  body::after {
-    background: radial-gradient(circle at 20% 50%, var(--glow-break) 0, transparent 60%);
-    opacity: 0;
-  }
-  body[data-mode="break"]::before { opacity: 0; }
-  body[data-mode="break"]::after { opacity: 1; }
-  body > * { position: relative; z-index: 1; }
-  svg { width: 64px; height: 64px; transform: rotate(-90deg); }
-  .track { fill: none; stroke: rgb(236 232 225 / 0.1); stroke-width: 6; }
-  .ring {
-    fill: none;
-    stroke: var(--color);
-    stroke-width: 6;
-    stroke-linecap: round;
-    stroke-dasharray: ${RING.toFixed(2)};
-    transition: stroke 300ms ease;
-  }
+  .fruit { width: 64px; height: 72px; }
+  .fruit * { transition: fill 200ms ease; }
   .text { min-width: 0; }
   .time {
     font-size: 30px;
@@ -75,7 +64,7 @@ const MINI_CSS = `
   body[data-paused] .time { opacity: 0.5; }
   .label {
     overflow: hidden;
-    color: rgb(236 232 225 / 0.6);
+    color: rgba(${INK}, 0.6);
     font-family: "Iowan Old Style", "New York", ui-serif, Georgia, serif;
     font-size: 14px;
     font-style: italic;
@@ -87,10 +76,10 @@ const MINI_CSS = `
     width: 36px;
     height: 36px;
     place-items: center;
-    border: 1px solid rgb(236 232 225 / 0.18);
+    border: 0;
     border-radius: 50%;
-    background: transparent;
-    color: #ece8e1;
+    background: #18181c;
+    color: #f7f4ee;
     cursor: pointer;
     transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
   }
@@ -100,7 +89,7 @@ const MINI_CSS = `
     button { transition: none; }
     button[data-pressed] { transform: none; }
   }
-  button svg { width: 14px; height: 14px; transform: none; }
+  button svg { width: 14px; height: 14px; }
 `;
 
 const ICON_PAUSE =
@@ -187,16 +176,25 @@ export function createMini({ onToggle, onTick, onClose }) {
     style.textContent = MINI_CSS;
     doc.head.append(style);
     doc.body.innerHTML = `
-      <svg viewBox="0 0 72 72" aria-hidden="true">
-        <circle class="track" cx="36" cy="36" r="30"></circle>
-        <circle class="ring" cx="36" cy="36" r="30"></circle>
+      <svg class="fruit" viewBox="-40 -48 80 90" aria-hidden="true">
+        <ellipse data-part="leaf" cx="11" cy="-38" rx="11" ry="5"
+          transform="rotate(-20 3 -36)"></ellipse>
+        <rect data-part="stem" x="-2.5" y="-43" width="5" height="14" rx="2.5"></rect>
+        <circle data-part="shade" r="${FRUIT_R.skin}" cy="3"></circle>
+        <circle data-part="skin" r="${FRUIT_R.skin}"></circle>
+        <circle data-part="rind" r="${FRUIT_R.rind}"></circle>
+        <circle data-part="face" r="${FRUIT_R.face}"></circle>
+        <path data-part="wedge"></path>
+        <circle r="${FRUIT_R.hub}" fill="#18181c"></circle>
       </svg>
       <div class="text">
         <div class="time" role="timer"></div>
         <div class="label"></div>
       </div>
       <button type="button"></button>`;
-    nodes.ring = doc.querySelector(".ring");
+    nodes.parts = Object.fromEntries(
+      [...doc.querySelectorAll("[data-part]")].map(n => [n.dataset.part, n])
+    );
     nodes.time = doc.querySelector(".time");
     nodes.label = doc.querySelector(".label");
     nodes.button = doc.querySelector("button");
@@ -270,17 +268,16 @@ export function createMini({ onToggle, onTick, onClose }) {
     const time = fmtClock(left);
     // Same scale as the big dial: a full ring is 60 minutes.
     const frac = Math.min(1, left / DIAL_MS);
-    const key = `${time}|${frac.toFixed(3)}|${view.label}|${view.running}|${view.started}|${view.mode}|${view.color}`;
+    const key = `${time}|${frac.toFixed(3)}|${view.label}|${view.running}|${view.started}|${view.mode}|${Object.values(view.colors).join()}`;
     if (key === painted) return;
     painted = key;
     if (pip) {
       const body = pip.document.body;
-      body.style.setProperty("--color", view.color);
-      body.style.setProperty("--glow-focus", view.glowFocus);
-      body.style.setProperty("--glow-break", view.glowBreak);
-      body.dataset.mode = view.mode;
       body.toggleAttribute("data-paused", !view.running && view.started);
-      nodes.ring.style.strokeDashoffset = String(RING * (1 - frac));
+      for (const [part, node] of Object.entries(nodes.parts)) {
+        node.setAttribute("fill", view.colors[part]);
+      }
+      nodes.parts.wedge.setAttribute("d", pie(frac, FRUIT_R.wedge));
       nodes.time.textContent = time;
       nodes.label.textContent = view.label;
       nodes.button.innerHTML = view.running ? ICON_PAUSE : ICON_PLAY;
@@ -296,40 +293,63 @@ export function createMini({ onToggle, onTick, onClose }) {
   function draw(time, frac) {
     const ctx = canvas.getContext("2d");
     const { width: w, height: h } = canvas;
-    ctx.fillStyle = "#0b0b0d";
-    ctx.fillRect(0, 0, w, h);
-    const glow = ctx.createRadialGradient(120, h / 2, 0, 120, h / 2, 260);
-    glow.addColorStop(0, view.glow);
-    glow.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = glow;
+    const c = view.colors;
+    ctx.fillStyle = "#f0eeea";
     ctx.fillRect(0, 0, w, h);
 
-    const cx = 104;
-    const cy = h / 2;
-    const r = 62;
-    ctx.lineWidth = 12;
-    ctx.lineCap = "round";
-    ctx.strokeStyle = "rgba(236,232,225,0.1)";
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.stroke();
-    if (frac > 0) {
-      ctx.strokeStyle = view.color;
+    // The little fruit, at 2.2x the document window's scale.
+    ctx.save();
+    ctx.translate(100, h / 2 + 12);
+    ctx.scale(2.2, 2.2);
+    const disc = (r, fill, cy = 0) => {
+      ctx.fillStyle = fill;
       ctx.beginPath();
-      ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
-      ctx.stroke();
+      ctx.arc(0, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+    };
+    ctx.save();
+    ctx.translate(3, -36);
+    ctx.rotate((-20 * Math.PI) / 180);
+    ctx.fillStyle = c.leaf;
+    ctx.beginPath();
+    ctx.ellipse(8, -2, 11, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = c.stem;
+    ctx.beginPath();
+    ctx.roundRect(-2.5, -43, 5, 14, 2.5);
+    ctx.fill();
+    disc(FRUIT_R.skin, c.shade, 3);
+    disc(FRUIT_R.skin, c.skin);
+    disc(FRUIT_R.rind, c.rind);
+    disc(FRUIT_R.face, c.face);
+    if (frac > 0) {
+      ctx.fillStyle = c.wedge;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(
+        0,
+        0,
+        FRUIT_R.wedge,
+        -Math.PI / 2,
+        -Math.PI / 2 + frac * Math.PI * 2
+      );
+      ctx.closePath();
+      ctx.fill();
     }
+    disc(FRUIT_R.hub, "#18181c");
+    ctx.restore();
 
     ctx.fillStyle =
-      view.running || !view.started ? "#ece8e1" : "rgba(236,232,225,0.5)";
+      view.running || !view.started ? `rgb(${INK})` : `rgba(${INK}, 0.5)`;
     ctx.font = "600 64px ui-monospace, Menlo, monospace";
     ctx.textBaseline = "alphabetic";
-    ctx.fillText(time, 200, cy + 8);
-    ctx.fillStyle = "rgba(236,232,225,0.6)";
+    ctx.fillText(time, 200, h / 2 + 8);
+    ctx.fillStyle = `rgba(${INK}, 0.6)`;
     ctx.font = "italic 28px Georgia, serif";
     const label =
       view.label.length > 26 ? `${view.label.slice(0, 25)}…` : view.label;
-    ctx.fillText(label, 202, cy + 52);
+    ctx.fillText(label, 202, h / 2 + 52);
   }
 
   function teardown() {
