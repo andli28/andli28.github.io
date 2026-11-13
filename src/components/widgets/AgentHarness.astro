@@ -138,14 +138,6 @@
     gap: 8px;
     margin-right: auto;
   }
-  .ah-count {
-    min-width: 4.2em;
-    text-align: center;
-    font-size: 13px;
-    font-weight: 800;
-    color: var(--ah-mute);
-    font-variant-numeric: tabular-nums;
-  }
   .ah-round:disabled {
     opacity: 0.35;
   }
@@ -639,49 +631,137 @@
     background: var(--ah-red);
   }
 
-  /* ---- the task pips ---- */
+  /* ---- the level tiles ---- */
   .ah-pips {
     display: flex;
-    gap: 4px;
+    flex-wrap: wrap;
+    gap: 6px;
   }
   .ah .ah-pip {
-    flex: 1;
-    min-width: 0;
-    height: 28px;
+    width: 34px;
+    height: 34px;
     display: grid;
-    align-items: center;
-    border-radius: 6px;
-  }
-  .ah-pip i {
-    display: block;
-    height: 8px;
-    border-radius: 4px;
-    background: color-mix(in srgb, var(--ah-edge) 45%, transparent);
+    place-items: center;
+    border-radius: 10px;
+    border: 1.5px dashed var(--ah-edge);
+    background: transparent !important;
+    color: var(--ah-mute) !important;
+    font-size: 13px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
     transition:
       background 200ms var(--ah-ease),
-      height 200ms var(--ah-ease);
+      transform 120ms var(--ah-ease);
   }
-  .ah-pip[data-state="open"] i {
-    background: color-mix(in srgb, var(--c) 30%, var(--ah-tile));
-    box-shadow: inset 0 0 0 1.5px var(--c);
+  .ah .ah-pip[data-state="open"] {
+    border: 1.5px solid var(--c);
+    background: color-mix(in srgb, var(--c) 16%, var(--ah-tile)) !important;
+    color: var(--ah-ink) !important;
   }
-  .ah-pip[data-state="done"] i {
-    background: var(--c);
+  .ah .ah-pip[data-state="done"] {
+    border: 1.5px solid var(--c);
+    background: var(--c) !important;
+    color: #fff !important;
+    box-shadow: 0 2px 0 color-mix(in srgb, var(--c) 60%, #000);
   }
-  .ah-pip[aria-current="true"] i {
-    height: 14px;
-    border-radius: 7px;
+  .ah .ah-pip[aria-current="true"] {
     outline: 2px solid var(--ah-ink);
     outline-offset: 2px;
   }
   .ah-pip:disabled {
     cursor: default;
+    opacity: 0.7;
   }
-  @media (hover: hover) and (pointer: fine) {
-    .ah-pip:not(:disabled):hover i {
-      height: 14px;
-      border-radius: 7px;
+  .ah-pip:not(:disabled):active {
+    transform: translateY(2px);
+  }
+  @media (max-width: 520px) {
+    .ah-pips {
+      gap: 5px;
     }
+    .ah .ah-pip {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      font-size: 12px;
+    }
+  }
+
+  /* ---- the level-cleared card ---- */
+  .ah-kicker {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ah-mute);
+  }
+  .ah-cleared .ah-sheettitle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 4px 0 12px;
+    font-size: 28px;
+    color: var(--c);
+  }
+  .ah-cleared .ah-sheettitle span {
+    color: var(--ah-ink);
+  }
+  .ah-cleared .ah-sheettitle .ah-i {
+    width: 30px;
+    height: 30px;
+  }
+  .ah-cleared .ah-evals {
+    margin-bottom: 12px;
+  }
+  .ah-added {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 0 0;
+    color: var(--ah-mute);
+    font-weight: 700;
+  }
+  .ah-added .ah-i {
+    width: 18px;
+    height: 18px;
+  }
+  .ah-cardbtns {
+    display: grid;
+    grid-template-columns: 1fr 1.4fr;
+    gap: 8px;
+    margin-top: 16px;
+  }
+  .ah-fly {
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 60;
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    border-radius: 12px;
+    background: var(--c);
+    color: #fff;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .ah-fly .ah-i {
+    width: 20px;
+    height: 20px;
+  }
+  .ah-round.ah-bump {
+    z-index: 50;
+    animation: ah-bump 520ms var(--ah-ease);
+  }
+  @keyframes ah-bump {
+    30% {
+      transform: scale(1.35);
+    }
+  }
+  .ah-note.ah-here {
+    box-shadow: 0 0 0 2px var(--c);
   }
   @keyframes ah-blink {
     50% {
@@ -1076,7 +1156,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    color: var(--ah-accent);
+    color: var(--c, var(--ah-accent));
   }
   .ah-note header .ah-i {
     width: 26px;
@@ -1084,6 +1164,7 @@
   }
   .ah-note small {
     font-size: 10px;
+    text-transform: uppercase;
     font-weight: 700;
     letter-spacing: 0.12em;
     color: var(--ah-mute);

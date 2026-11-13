@@ -93,6 +93,9 @@ export function mountHarness(root) {
     return state.on[T.id];
   };
   const isOn = id => wired().includes(id);
+  // A part's field note is earned by clearing the level that introduces it.
+  const noted = () =>
+    TASKS.filter(T => everything || state.done[T.id]).map(T => T.gives);
 
   // ---------- sound ----------
   let ctx;
@@ -130,8 +133,7 @@ export function mountHarness(root) {
   };
   const prevBtn = mkRound("back", "Previous task", () => go(state.at - 1));
   const nextBtn = mkRound("fwd", "Next task", () => go(state.at + 1));
-  const countEl = h("span", "ah-count");
-  pager.append(prevBtn, countEl, nextBtn);
+  pager.append(prevBtn, nextBtn);
   // The chip is two buttons: the model switch, and what the model is.
   const chipBox = h("div", "ah-modelchip");
   const chip = h("button", "ah-chipmain");
@@ -150,12 +152,17 @@ export function mountHarness(root) {
   const tools = h("div", "ah-tools");
   head.append(nameEl, pager, chipBox, tools);
 
-  // One pip per task: where you are, what is cleared, what is still locked.
+  // One numbered tile per task: where you are, what is cleared, what is
+  // still locked.
   const pips = h("div", "ah-pips");
   pips.setAttribute("role", "group");
   pips.setAttribute("aria-label", "Tasks");
   TASKS.forEach((T, i) => {
-    const b = h("button", `ah-pip ah-c-${PARTS[T.gives].branch}`, "<i></i>");
+    const b = h(
+      "button",
+      `ah-pip ah-c-${PARTS[T.gives].branch}`,
+      String(i + 1)
+    );
     b.type = "button";
     b.dataset.i = i;
     pips.append(b);
@@ -332,8 +339,7 @@ export function mountHarness(root) {
 
   function draw() {
     const T = task();
-    notesBtn.dataset.count = state.owned.length || "";
-    countEl.textContent = `${state.at + 1} / ${TASKS.length}`;
+    notesBtn.dataset.count = noted().length || "";
     prevBtn.disabled = state.at === 0;
     nextBtn.disabled = state.at >= state.top;
     [...pips.children].forEach((b, i) => {
@@ -363,9 +369,7 @@ export function mountHarness(root) {
       for (const id of mine) parts.append(partEl(id));
       e.append(parts);
     }
-    const cleared = !!state.done[T.id] && state.at < LAST;
-    runBtn.querySelector("span").textContent = cleared ? "Next" : "Run";
-    hintBtn.querySelector("span").textContent = cleared ? "Run again" : "Hint";
+    runBtn.querySelector("span").textContent = "Run";
     requestAnimationFrame(drawWires);
   }
 
@@ -544,7 +548,7 @@ export function mountHarness(root) {
     const name = PARTS[id].name;
     if (owns(id)) {
       elOf(id)?.classList.add("ah-hinted");
-      return `${name} is switched off.`;
+      return `${name} is switched off. Tap it to connect it.`;
     }
     state.owned.push(id);
     blip(660, 0.09);
@@ -552,7 +556,7 @@ export function mountHarness(root) {
     save();
     draw();
     elOf(id)?.classList.add("ah-new", "ah-hinted");
-    return `New part: ${name}. Tap it.`;
+    return `A new part can fix this: ${name}. Tap it to connect it.`;
   }
 
   map.addEventListener("click", ev => {
@@ -562,7 +566,6 @@ export function mountHarness(root) {
   });
   hintBtn.addEventListener("click", () => {
     if (state.running) return;
-    if (state.done[task().id] && state.at < LAST) return run();
     note(point() || "This harness has what the task needs. Run it.");
   });
   runBtn.addEventListener("click", () => {
@@ -570,7 +573,6 @@ export function mountHarness(root) {
       state.fast = true;
       return;
     }
-    if (state.done[task().id] && state.at < LAST) return go(state.at + 1);
     run();
   });
   const onKey = ev => {
@@ -744,6 +746,7 @@ export function mountHarness(root) {
       // solved another way: the part this task introduces still arrives
       if (!owns(T.gives)) state.owned.push(T.gives);
     }
+    const first = res.pass && !state.done[T.id];
     if (res.pass) state.done[T.id] = true;
     save();
     draw();
@@ -756,13 +759,14 @@ export function mountHarness(root) {
           ? "Every eval passes."
           : "Every eval passes. That's the whole harness."
       );
+      showCleared(res, first);
     } else {
       botEl.dataset.face = "sad";
       blip(160, 0.2, "sawtooth", 0.04);
-      const miss = res.evals.find(e => !e.ok).label;
+      const miss = res.evals.find(e => !e.ok).miss;
       const fix = point();
       note(
-        `Failed: ${miss}. ${fix || (model.real ? "The harness is right; this small model still slipped. Read the trace, or move on." : "")}`,
+        `Failed: ${miss} ${fix || (model.real ? "The harness is right; this small model still slipped. Read the trace, or move on." : "")}`,
         true
       );
     }
@@ -800,30 +804,108 @@ export function mountHarness(root) {
     if (ev.target === overlay) closeOverlay();
   });
 
-  function showNotes() {
+  const sheet = label => {
     overlay.innerHTML = "";
     overlay.hidden = false;
     const s = h("div", "ah-sheet");
     s.setAttribute("role", "dialog");
-    s.setAttribute("aria-label", "Field notes");
+    s.setAttribute("aria-label", label);
+    overlay.append(s);
+    return s;
+  };
+  const lesson = id =>
+    `<p>${PARTS[id].does}</p><p class="ah-wild"><b>In the wild</b> ${PARTS[id].wild}</p>`;
+
+  // Field notes: one per cleared level, in level order. The current level's
+  // note, if it has been earned, is marked and scrolled to.
+  function showNotes() {
+    const s = sheet("Field notes");
     const x = h("button", "ah-round ah-close", icon("x"));
     x.type = "button";
     x.setAttribute("aria-label", "Close");
     x.addEventListener("click", closeOverlay);
-    const done = state.owned.length === ALL.length;
+    const have = noted();
+    const here = task().gives;
     const card = id => {
       const P = PARTS[id];
       const B = BRANCHES.find(b => b.id === P.branch);
-      return `<article class="ah-note ah-c-${P.branch}"><header>${icon(id)}<div><small>${B.name}</small><h4>${P.name}</h4></div></header><p>${P.does}</p><p class="ah-wild"><b>In the wild</b> ${P.wild}</p></article>`;
+      const n = TASKS.findIndex(T => T.gives === id) + 1;
+      return `<article class="ah-note ah-c-${P.branch}${id === here ? " ah-here" : ""}"><header>${icon(id)}<div><small>Level ${n} · ${B.name}</small><h4>${P.name}</h4></div></header>${lesson(id)}</article>`;
     };
     const body = h(
       "div",
       "ah-sheetbody",
-      `<p class="ah-sub">${done ? "The whole harness." : `${state.owned.length} of ${ALL.length} parts so far.`} Each one is real code running in this page.</p><div class="ah-notes">${BRANCHES.map(b => ORDER[b.id].filter(owns).map(card).join("")).join("")}</div>`
+      `<p class="ah-sub">${
+        have.length === ALL.length
+          ? "The whole harness."
+          : have.length
+            ? `${have.length} of ${ALL.length} so far. Clear a level to add its note.`
+            : "Nothing here yet. Clear a level to add its note."
+      } Each part is real code running in this page.</p><div class="ah-notes">${have.map(card).join("")}</div>`
     );
     s.append(x, h("h3", "ah-sheettitle", "Field notes"), body);
-    overlay.append(s);
     x.focus();
+    s.querySelector(".ah-here")?.scrollIntoView({ block: "center" });
+  }
+
+  // The end of a level: what passed, what the part taught, and the note
+  // going into the field notes.
+  function showCleared(res, first) {
+    const T = task();
+    const id = T.gives;
+    const P = PARTS[id];
+    const last = state.at === LAST;
+    const s = sheet("Level cleared");
+    s.classList.add("ah-cleared", `ah-c-${P.branch}`);
+    s.innerHTML = `<small class="ah-kicker">Level ${String(state.at + 1).padStart(2, "0")} cleared${last ? " · that's the whole harness" : ""}</small>
+      <h3 class="ah-sheettitle">${icon(id)}<span>${P.name}</span></h3>
+      <ul class="ah-evals">${res.evals.map(e => `<li class="ah-e-ok">${icon("check")}<span>${e.label}</span></li>`).join("")}</ul>
+      <div class="ah-note"><small>What you learned</small>${lesson(id)}</div>
+      <p class="ah-added">${icon("book")}<span>${first ? "Added to your field notes" : "In your field notes"}</span></p>
+      <div class="ah-cardbtns"></div>`;
+    const btns = s.querySelector(".ah-cardbtns");
+    const mk = (label, primary, fn) => {
+      const b = h("button", `ah-btn${primary ? " ah-run" : ""}`, label);
+      b.type = "button";
+      b.addEventListener("click", fn);
+      btns.append(b);
+      return b;
+    };
+    if (last) {
+      mk("Field notes", false, showNotes);
+      mk("Done", true, closeOverlay).focus();
+    } else {
+      mk("Stay here", false, closeOverlay);
+      mk("Next level", true, () => go(state.at + 1)).focus();
+    }
+    if (!first) return;
+    // the note flies to the Field notes button, and its counter goes up
+    const count = noted().length;
+    const land = () => {
+      notesBtn.dataset.count = count;
+      notesBtn.classList.remove("ah-bump");
+      void notesBtn.offsetWidth;
+      notesBtn.classList.add("ah-bump");
+    };
+    if (reduced()) return land();
+    notesBtn.dataset.count = count - 1 || "";
+    const from = s.querySelector(".ah-added").getBoundingClientRect();
+    const to = notesBtn.getBoundingClientRect();
+    const fly = h("div", `ah-fly ah-c-${P.branch}`, icon(id));
+    root.append(fly);
+    const at = r =>
+      `translate(${r.left + r.width / 2 - 18}px, ${r.top + r.height / 2 - 18}px)`;
+    fly
+      .animate(
+        [
+          { transform: `${at(from)} scale(0.6)`, opacity: 0 },
+          { transform: `${at(from)} scale(1.15)`, opacity: 1, offset: 0.25 },
+          { transform: `${at(to)} scale(0.5)`, opacity: 1 },
+        ],
+        { duration: 900, delay: 350, easing: "cubic-bezier(0.5, 0, 0.2, 1)" }
+      )
+      .finished.then(land, land)
+      .finally(() => fly.remove());
   }
 
   let rz;

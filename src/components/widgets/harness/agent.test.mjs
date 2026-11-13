@@ -202,3 +202,8 @@ test("the check throws an unchecked answer away", async () => {
     false
   );
 });
+
+test("every eval says what went wrong when it fails", () => {
+  for (const T of TASKS)
+    for (const e of T.evals) assert.match(e.miss, /^[a-z].*\.$/, e.label);
+});
