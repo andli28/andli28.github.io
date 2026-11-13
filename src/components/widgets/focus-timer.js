@@ -8,7 +8,7 @@
 
 import { blockAt, buildPlan, describePlan } from "./focus-plan.js";
 import { createMini, miniSupported } from "./focus-mini.js";
-import { COLORS, DIAL_MS, MIN, fmtClock } from "./focus-shared.js";
+import { DIAL_MS, FRUITS, MIN, fmtClock, modeColors } from "./focus-shared.js";
 
 const STORAGE_KEY = "lab-focus-timer-v2";
 const DEFAULTS = { focus: 25, short: 5, long: 15, every: 4 };
@@ -134,7 +134,10 @@ export function mountFocusTimer(root) {
     fields: [...root.querySelectorAll("[data-ft-set]")],
     resetToday: $("reset-today"),
     clearHistory: $("clear-history"),
+    fruitBtn: $("fruit-btn"),
+    fruits: [...root.querySelectorAll("[data-ft-fruit]")],
     panels: {
+      fruit: { btn: $("fruit-btn"), panel: $("fruit-panel") },
       settings: { btn: $("settings-btn"), panel: $("panel") },
       plan: { btn: $("plan-btn"), panel: $("plan-panel") },
     },
@@ -166,6 +169,7 @@ export function mountFocusTimer(root) {
   const state = {
     log: Array.isArray(saved.log) ? saved.log : [],
     sound: saved.sound ?? false,
+    fruit: FRUITS[saved.fruit] ? saved.fruit : "tomato",
     notify: saved.notify ?? false,
     settings,
     plan: saved.plan?.blocks?.length ? saved.plan : null,
@@ -221,8 +225,9 @@ export function mountFocusTimer(root) {
       mode: state.mode,
       running: state.running,
       started: inProgress(),
-      color: COLORS[focus ? "focus" : "break"].stroke,
-      glow: COLORS[focus ? "focus" : "break"].glow,
+      ...modeColors(state.fruit, focus),
+      glowFocus: modeColors(state.fruit, true).glow,
+      glowBreak: modeColors(state.fruit, false).glow,
     };
   }
 
@@ -232,11 +237,11 @@ export function mountFocusTimer(root) {
   function save() {
     const cutoff = Date.now() - HISTORY_DAYS * 86_400_000;
     state.log = state.log.filter(s => s.end >= cutoff);
-    const { log, sound, notify, settings, plan, ...timer } = state;
+    const { log, sound, fruit, notify, settings, plan, ...timer } = state;
     try {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ log, sound, notify, settings, plan, timer })
+        JSON.stringify({ log, sound, fruit, notify, settings, plan, timer })
       );
     } catch {
       // Storage can be unavailable (private mode); the timer still works.
@@ -788,6 +793,9 @@ export function mountFocusTimer(root) {
       planPreview();
       el.planClear.hidden = !state.plan;
       el.planEnd.focus({ preventScroll: true });
+    } else if (name === "fruit") {
+      const current = el.fruits.find(b => b.dataset.ftFruit === state.fruit);
+      current?.focus({ preventScroll: true });
     } else {
       el.fields[0]?.focus({ preventScroll: true });
     }
@@ -978,7 +986,7 @@ export function mountFocusTimer(root) {
   // Press feedback (a small scale) is set on pointer presses only, so
   // keyboard activation stays instant.
   const PRESSABLE =
-    "[data-ft='hub'], .ft-recent button, .ft-plan-quick button, .ft-plan-go";
+    "[data-ft='hub'], .ft-recent button, .ft-plan-quick button, .ft-plan-go, .ft-fruit-grid button";
   root.addEventListener("pointerdown", e => {
     const target = e.target.closest(PRESSABLE);
     if (target) target.dataset.pressed = "";
@@ -1011,6 +1019,15 @@ export function mountFocusTimer(root) {
     }
     render();
   });
+
+  for (const btn of el.fruits) {
+    btn.addEventListener("click", () => {
+      state.fruit = btn.dataset.ftFruit;
+      save();
+      render();
+      mini.update(miniView());
+    });
+  }
 
   el.sound.addEventListener("click", () => {
     state.sound = !state.sound;
@@ -1290,6 +1307,14 @@ export function mountFocusTimer(root) {
   function render() {
     const paused = !state.running && inProgress();
     root.dataset.mode = state.mode;
+    root.dataset.fruit = state.fruit;
+    for (const btn of el.fruits) {
+      btn.setAttribute(
+        "aria-pressed",
+        String(btn.dataset.ftFruit === state.fruit)
+      );
+    }
+    el.fruitBtn.setAttribute("aria-label", `Fruit: ${state.fruit}`);
     root.dataset.state = state.running ? "running" : paused ? "paused" : "idle";
 
     const active = tabKey();
@@ -1352,8 +1377,7 @@ export function mountFocusTimer(root) {
 
   // ---- Start up ----------------------------------------------------------
 
-  el.panels.settings.panel.inert = true;
-  el.panels.plan.panel.inert = true;
+  for (const { panel } of Object.values(el.panels)) panel.inert = true;
 
   if (state.plan && Date.now() >= state.plan.end) {
     // The plan ended while the page was closed: wrap it up quietly.

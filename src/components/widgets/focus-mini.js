@@ -6,7 +6,7 @@
 // shown as a picture-in-picture video; its play/pause button drives the
 // timer.
 
-import { COLORS, DIAL_MS, fmtClock } from "./focus-shared.js";
+import { DIAL_MS, fmtClock } from "./focus-shared.js";
 
 const RING = 2 * Math.PI * 30;
 
@@ -46,10 +46,10 @@ const MINI_CSS = `
     transition: opacity 300ms ease;
   }
   body::before {
-    background: radial-gradient(circle at 20% 50%, ${COLORS.focus.glow} 0, transparent 60%);
+    background: radial-gradient(circle at 20% 50%, var(--glow-focus) 0, transparent 60%);
   }
   body::after {
-    background: radial-gradient(circle at 20% 50%, ${COLORS.break.glow} 0, transparent 60%);
+    background: radial-gradient(circle at 20% 50%, var(--glow-break) 0, transparent 60%);
     opacity: 0;
   }
   body[data-mode="break"]::before { opacity: 0; }
@@ -270,12 +270,14 @@ export function createMini({ onToggle, onTick, onClose }) {
     const time = fmtClock(left);
     // Same scale as the big dial: a full ring is 60 minutes.
     const frac = Math.min(1, left / DIAL_MS);
-    const key = `${time}|${frac.toFixed(3)}|${view.label}|${view.running}|${view.started}|${view.mode}`;
+    const key = `${time}|${frac.toFixed(3)}|${view.label}|${view.running}|${view.started}|${view.mode}|${view.color}`;
     if (key === painted) return;
     painted = key;
     if (pip) {
       const body = pip.document.body;
       body.style.setProperty("--color", view.color);
+      body.style.setProperty("--glow-focus", view.glowFocus);
+      body.style.setProperty("--glow-break", view.glowBreak);
       body.dataset.mode = view.mode;
       body.toggleAttribute("data-paused", !view.running && view.started);
       nodes.ring.style.strokeDashoffset = String(RING * (1 - frac));
