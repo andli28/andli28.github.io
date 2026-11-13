@@ -465,6 +465,9 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
     --ft-shadow-rgb: 60 40 20;
     --ft-scheme: light;
     --ft-break: #2e9a6c;
+    /* Breaks: the flesh turns a soft warm gray, calm and natural on every
+       fruit (the timeline keeps green for its break blocks). */
+    --ft-rest: #b3aea6;
     --ft-color: var(--ft-focus);
     --ft-hot: var(--ft-color);
     --ft-wedge: var(--fruit-wedge);
@@ -547,8 +550,8 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
     --fruit-stem: #6b4226;
   }
   .ft[data-mode="break"] {
-    --ft-color: var(--ft-break);
-    --ft-wedge: var(--ft-break);
+    --ft-color: var(--ft-rest);
+    --ft-wedge: var(--ft-rest);
   }
   /* Parts that belong to one fruit only. */
   .ft [data-fruit-only] {
@@ -591,7 +594,7 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
   .ft-glow-break {
     background: radial-gradient(
       circle at 50% 42%,
-      color-mix(in srgb, var(--ft-break) 32%, transparent) 0,
+      color-mix(in srgb, var(--ft-rest) 32%, transparent) 0,
       transparent 55%
     );
   }
