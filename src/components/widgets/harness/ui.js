@@ -21,7 +21,8 @@ const LAST = TASKS.length - 1;
 const REAL = MODEL.name;
 // How long each trace line holds, and how long a signal takes to cross a
 // wire, in ms at 1× speed.
-const PACE = { line: 950, signal: 680, type: 34 };
+const PACE = { line: 475, signal: 340, type: 17 };
+const SPEEDS = [1, 2, 0.5];
 // Which way a harness step travels: out from the model, in to it, or both.
 const FLOW = {
   feedback: ["out", "in"],
@@ -70,7 +71,7 @@ export function mountHarness(root) {
     top: everything ? LAST : Math.min(saved.top || 0, LAST),
     at: Math.min(saved.at || 0, LAST),
     sound: !!saved.sound,
-    speed: saved.speed === 2 ? 2 : 1,
+    speed: SPEEDS.includes(saved.rate) ? saved.rate : 1,
     model: query.get("model") || saved.model || "auto",
     running: false,
     fast: false,
@@ -88,7 +89,7 @@ export function mountHarness(root) {
           top: state.top,
           at: state.at,
           sound: state.sound,
-          speed: state.speed,
+          rate: state.speed,
           model: state.model,
         })
       );
@@ -259,13 +260,11 @@ export function mountHarness(root) {
   speedBtn.type = "button";
   const syncSpeed = () => {
     speedBtn.textContent = `${state.speed}×`;
-    speedBtn.title = speedBtn.ariaLabel =
-      state.speed === 1
-        ? "Speed: normal. Tap for double speed."
-        : "Speed: double. Tap for normal speed.";
+    speedBtn.title =
+      speedBtn.ariaLabel = `Speed: ${{ 0.5: "half", 1: "normal", 2: "double" }[state.speed]}. Tap to change.`;
   };
   speedBtn.addEventListener("click", () => {
-    state.speed = state.speed === 1 ? 2 : 1;
+    state.speed = SPEEDS[(SPEEDS.indexOf(state.speed) + 1) % SPEEDS.length];
     save();
     syncSpeed();
   });
