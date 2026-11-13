@@ -38,8 +38,16 @@ export function mountHarness(root) {
   if (root.dataset.ready) return;
   root.dataset.ready = "1";
 
-  const saved = load();
   const query = new URLSearchParams(location.search);
+  // ?selftest runs every level on the real model and reports, instead of
+  // the game
+  if (query.has("selftest")) {
+    import("./selftest.js").then(m =>
+      m.selfTest(root, query.get("selftest") || "")
+    );
+    return;
+  }
+  const saved = load();
   const everything = query.has("all");
   const state = {
     owned: everything ? [...ALL] : saved.owned || [],
