@@ -15,61 +15,113 @@ import Wide from "@/components/Wide.astro";
       <div class="ctl">
         <span class="lab">Arrivals</span>
         <div class="seg" data-key="arrival">
-          <button data-v="burst" aria-pressed="true">Burst (all at 0 ms)</button><button data-v="stagger" aria-pressed="false">Every 100 ms</button>
+          <button data-v="burst" aria-pressed="true">Burst (all at 0 ms)</button
+          ><button data-v="stagger" aria-pressed="false">Every 100 ms</button>
         </div>
       </div>
       <div class="ctl">
         <span class="lab">Prompt length</span>
         <div class="seg" data-key="prompt">
-          <button data-v="128" aria-pressed="true">128 tokens</button><button data-v="1536" aria-pressed="false">1536 tokens</button>
+          <button data-v="128" aria-pressed="true">128 tokens</button><button
+            data-v="1536"
+            aria-pressed="false">1536 tokens</button
+          >
         </div>
       </div>
       <div class="ctl">
         <span class="lab">New tokens per client</span>
         <div class="seg" data-key="tokens">
-          <button data-v="64" aria-pressed="true">64 (as measured)</button><button data-v="8" aria-pressed="false">8 (see each step)</button>
+          <button data-v="64" aria-pressed="true">64 (as measured)</button
+          ><button data-v="8" aria-pressed="false">8 (see each step)</button>
         </div>
       </div>
       <div class="ctl">
         <span class="lab">Cost of a 4-row step vs a 1-row step</span>
         <div class="row">
-          <input data-ib="m4" type="range" min="1" max="5" step="0.01" value="1.14" aria-label="Cost of a 4-row step vs a 1-row step" />
+          <input
+            data-ib="m4"
+            type="range"
+            min="1"
+            max="5"
+            step="0.01"
+            value="1.14"
+            aria-label="Cost of a 4-row step vs a 1-row step"
+          />
           <span class="m4val" data-ib="m4v">1.14x</span>
           <div class="seg" data-key="m4preset">
-            <button data-v="1.14" aria-pressed="true">T4 GPU</button><button data-v="3" aria-pressed="false">Laptop CPU</button>
+            <button data-v="1.14" aria-pressed="true">T4 GPU</button><button
+              data-v="3"
+              aria-pressed="false">Laptop CPU</button
+            >
           </div>
         </div>
       </div>
       <div class="play">
         <button class="btn" data-ib="playBtn">Play</button>
         <div class="seg" data-key="speed" aria-label="Speed">
-          <button data-v="0.1" aria-pressed="false">0.1x</button><button data-v="0.25" aria-pressed="false">0.25x</button><button data-v="1" aria-pressed="true">1x</button><button data-v="3" aria-pressed="false">3x</button>
+          <button data-v="0.1" aria-pressed="false">0.1x</button><button
+            data-v="0.25"
+            aria-pressed="false">0.25x</button
+          ><button data-v="1" aria-pressed="true">1x</button><button
+            data-v="3"
+            aria-pressed="false">3x</button
+          >
         </div>
-        <input class="scrub" data-ib="scrub" type="range" min="0" max="1000" value="1000" aria-label="Time" />
+        <input
+          class="scrub"
+          data-ib="scrub"
+          type="range"
+          min="0"
+          max="1000"
+          value="1000"
+          aria-label="Time"
+        />
         <span class="clock" data-ib="clock">t = 0 ms</span>
       </div>
     </section>
 
     <div class="legend">
-      <span><i class="sw" style="background:var(--ib-queue);opacity:.5"></i>waiting in queue</span>
-      <span><i class="sw" style="background:var(--ib-prefill)"></i>prefill (whole prompt, one request)</span>
-      <span><i class="sw" style="background:var(--ib-decode)"></i>decode (one token per step)</span>
-      <span><i class="sw" style="background:var(--ib-stall)"></i>stall: decoding client waits on another prefill</span>
+      <span
+        ><i class="sw" style="background:var(--ib-queue);opacity:.5"></i>waiting
+        in queue</span
+      >
+      <span
+        ><i class="sw" style="background:var(--ib-prefill)"></i>prefill (whole
+        prompt, one request)</span
+      >
+      <span
+        ><i class="sw" style="background:var(--ib-decode)"></i>decode (one token
+        per step)</span
+      >
+      <span
+        ><i class="sw" style="background:var(--ib-stall)"></i>stall: decoding
+        client waits on another prefill</span
+      >
       <span>&#9670; first token (TTFT)</span>
     </div>
 
     <section class="panel">
-      <div class="phead"><p class="ph">HW1: serial, run to completion</p><span class="tag">max_batch = 1</span></div>
+      <div class="phead">
+        <p class="ph">HW1: serial, run to completion</p><span class="tag"
+          >max_batch = 1</span
+        >
+      </div>
       <div class="chart" data-ib="chart-serial"></div>
       <div class="stats" data-ib="stats-serial"></div>
     </section>
 
     <section class="panel">
-      <div class="phead"><p class="ph">HW2: iteration-level batching</p><span class="tag">max_batch = 4</span></div>
+      <div class="phead">
+        <p class="ph">HW2: iteration-level batching</p><span class="tag"
+          >max_batch = 4</span
+        >
+      </div>
       <div class="chart" data-ib="chart-batched"></div>
       <div class="stats" data-ib="stats-batched"></div>
       <div class="loopbox">
-        <pre class="loop" aria-label="HW2 scheduler loop"><span data-ib="L0">while waiting or active:</span><span class="c">    # 1. Admit: prefill each arrived request, one at a time</span><span data-ib="L2">    while waiting and len(active) &lt; max_batch and arrived:</span><span data-ib="L3">        manual_prefill(...)   # first token = TTFT</span><span class="c">    # 2. One batched decode step: every active request +1 token</span><span data-ib="L5">    batched_decode_step(model, dims, active)</span><span class="c">    # 3. Finished requests leave, freeing their slot</span><span data-ib="L7">    active = [r for r in active if not r.done]</span></pre>
+        <pre
+          class="loop"
+          aria-label="HW2 scheduler loop"><span data-ib="L0">while waiting or active:</span><span class="c">    # 1. Admit: prefill each arrived request, one at a time</span><span data-ib="L2">    while waiting and len(active) &lt; max_batch and arrived:</span><span data-ib="L3">        manual_prefill(...)   # first token = TTFT</span><span class="c">    # 2. One batched decode step: every active request +1 token</span><span data-ib="L5">    batched_decode_step(model, dims, active)</span><span class="c">    # 3. Finished requests leave, freeing their slot</span><span data-ib="L7">    active = [r for r in active if not r.done]</span></pre>
         <div class="now" data-ib="now" aria-live="off"></div>
       </div>
     </section>
@@ -93,7 +145,14 @@ import Wide from "@/components/Wide.astro";
       </div>
     </div>
     <p class="note">
-      Simulated from the study guide's T4 measurements: prefill P = 41 ms at 128 tokens and 413 ms at 1536; a solo decode step is about 34 ms (D = 2.2 s for 64 steps) and about 40 ms at 1536 tokens. The T4 4-row step costs about 1.14x a solo step; the laptop CPU measured 2x to 4.9x, so its preset uses 3x with the same T4 timings to isolate the effect. Arrivals, admission, and retirement follow the loop in <code>code/iteration_batching.py</code>.
+      Simulated from the study guide's T4 measurements: prefill P = 41 ms at 128
+      tokens and 413 ms at 1536; a solo decode step is about 34 ms (D = 2.2 s
+      for 64 steps) and about 40 ms at 1536 tokens. The T4 4-row step costs
+      about 1.14x a solo step; the laptop CPU measured 2x to 4.9x, so its preset
+      uses 3x with the same T4 timings to isolate the effect. Arrivals,
+      admission, and retirement follow the loop in <code
+        >code/iteration_batching.py</code
+      >.
     </p>
   </div>
 </Wide>
@@ -103,7 +162,9 @@ import Wide from "@/components/Wide.astro";
   // swaps pages without a full reload. Mounting twice is a no-op.
   import { mountIterativeBatching } from "./iterative-batching.js";
   const mountAll = () =>
-    document.querySelectorAll<HTMLElement>(".ib-root").forEach(mountIterativeBatching);
+    document
+      .querySelectorAll<HTMLElement>(".ib-root")
+      .forEach(mountIterativeBatching);
   mountAll();
   document.addEventListener("astro:page-load", mountAll);
 </script>
@@ -139,64 +200,326 @@ import Wide from "@/components/Wide.astro";
     font-size: 15px;
     line-height: 1.5;
 
-    p { margin: 0; max-width: 68ch; }
-    .ph { font-weight: 700; font-size: 18px; max-width: none; }
-    .ch { font-weight: 700; font-size: 15px; color: var(--ib-fg); }
-    code, .mono { font-family: var(--ib-f-mono); font-size: 0.88em; background: none; padding: 0; }
-    .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    p {
+      margin: 0;
+      max-width: 68ch;
+    }
+    .ph {
+      font-weight: 700;
+      font-size: 18px;
+      max-width: none;
+    }
+    .ch {
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--ib-fg);
+    }
+    code,
+    .mono {
+      font-family: var(--ib-f-mono);
+      font-size: 0.88em;
+      background: none;
+      padding: 0;
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
 
-    .controls { display: flex; flex-wrap: wrap; gap: 14px 26px; align-items: flex-end; padding: 14px 16px; background: var(--ib-surface); border: 1px solid var(--ib-line); border-radius: 10px; }
-    .ctl { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-    .ctl .lab { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ib-muted); font-weight: 600; }
-    .seg { display: inline-flex; border: 1px solid var(--ib-line); border-radius: 7px; overflow: hidden; }
-    .seg button { font: inherit; font-size: 13px; border: 0; background: transparent; color: var(--ib-fg); padding: 6px 11px; cursor: pointer; }
-    .seg button + button { border-left: 1px solid var(--ib-line); }
-    .seg button[aria-pressed="true"] { background: var(--ib-fg); color: var(--ib-bg); }
-    .seg button:focus-visible, .btn:focus-visible, input:focus-visible { outline: 2px solid var(--ib-accent); outline-offset: 2px; }
-    input[type="range"] { accent-color: var(--ib-accent); width: 180px; }
-    .m4val { font-family: var(--ib-f-mono); font-size: 13px; }
-    .play { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; width: 100%; }
-    .btn { font: inherit; font-weight: 600; font-size: 14px; border: 1px solid var(--ib-fg); background: var(--ib-fg); color: var(--ib-bg); border-radius: 7px; padding: 7px 16px; cursor: pointer; }
-    .scrub { flex: 1; min-width: 140px; width: auto; }
-    .clock { font-family: var(--ib-f-mono); font-size: 14px; min-width: 92px; text-align: right; font-variant-numeric: tabular-nums; }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px 26px;
+      align-items: flex-end;
+      padding: 14px 16px;
+      background: var(--ib-surface);
+      border: 1px solid var(--ib-line);
+      border-radius: 10px;
+    }
+    .ctl {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+    }
+    .ctl .lab {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--ib-muted);
+      font-weight: 600;
+    }
+    .seg {
+      display: inline-flex;
+      border: 1px solid var(--ib-line);
+      border-radius: 7px;
+      overflow: hidden;
+    }
+    .seg button {
+      font: inherit;
+      font-size: 13px;
+      border: 0;
+      background: transparent;
+      color: var(--ib-fg);
+      padding: 6px 11px;
+      cursor: pointer;
+    }
+    .seg button + button {
+      border-left: 1px solid var(--ib-line);
+    }
+    .seg button[aria-pressed="true"] {
+      background: var(--ib-fg);
+      color: var(--ib-bg);
+    }
+    .seg button:focus-visible,
+    .btn:focus-visible,
+    input:focus-visible {
+      outline: 2px solid var(--ib-accent);
+      outline-offset: 2px;
+    }
+    input[type="range"] {
+      accent-color: var(--ib-accent);
+      width: 180px;
+    }
+    .m4val {
+      font-family: var(--ib-f-mono);
+      font-size: 13px;
+    }
+    .play {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+    }
+    .btn {
+      font: inherit;
+      font-weight: 600;
+      font-size: 14px;
+      border: 1px solid var(--ib-fg);
+      background: var(--ib-fg);
+      color: var(--ib-bg);
+      border-radius: 7px;
+      padding: 7px 16px;
+      cursor: pointer;
+    }
+    .scrub {
+      flex: 1;
+      min-width: 140px;
+      width: auto;
+    }
+    .clock {
+      font-family: var(--ib-f-mono);
+      font-size: 14px;
+      min-width: 92px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
 
-    .panel { background: var(--ib-surface); border: 1px solid var(--ib-line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-    .phead { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; align-items: baseline; }
-    .tag { font-family: var(--ib-f-mono); font-size: 12px; padding: 2px 7px; border-radius: 5px; background: var(--ib-soft); color: var(--ib-muted); }
-    .chart { overflow-x: auto; }
-    .chart svg { display: block; width: 100%; min-width: 640px; height: auto; }
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
-    .stat { border-top: 2px solid var(--ib-line); padding-top: 6px; }
-    .stat .k { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ib-muted); font-weight: 600; }
-    .stat .v { font-family: var(--ib-f-mono); font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
-    .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--ib-muted); }
-    .legend span { display: inline-flex; align-items: center; gap: 6px; }
-    .sw { width: 14px; height: 10px; border-radius: 2px; display: inline-block; }
+    .panel {
+      background: var(--ib-surface);
+      border: 1px solid var(--ib-line);
+      border-radius: 10px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .phead {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 6px 16px;
+      align-items: baseline;
+    }
+    .tag {
+      font-family: var(--ib-f-mono);
+      font-size: 12px;
+      padding: 2px 7px;
+      border-radius: 5px;
+      background: var(--ib-soft);
+      color: var(--ib-muted);
+    }
+    .chart {
+      overflow-x: auto;
+    }
+    .chart svg {
+      display: block;
+      width: 100%;
+      min-width: 640px;
+      height: auto;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 10px;
+    }
+    .stat {
+      border-top: 2px solid var(--ib-line);
+      padding-top: 6px;
+    }
+    .stat .k {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--ib-muted);
+      font-weight: 600;
+    }
+    .stat .v {
+      font-family: var(--ib-f-mono);
+      font-size: 17px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 18px;
+      font-size: 13px;
+      color: var(--ib-muted);
+    }
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sw {
+      width: 14px;
+      height: 10px;
+      border-radius: 2px;
+      display: inline-block;
+    }
 
-    .loopbox { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
-    pre.loop { margin: 0; background: var(--ib-code-bg); color: var(--ib-fg); border-radius: 8px; padding: 10px 0; overflow-x: auto; font-family: var(--ib-f-mono); font-size: 12.5px; line-height: 1.55; }
-    pre.loop span { display: block; padding: 0 12px; transition: background 0.15s; }
-    pre.loop span.on { background: var(--ib-hl); }
-    pre.loop .c { color: var(--ib-muted); }
-    .now { font-size: 14px; display: flex; flex-direction: column; gap: 6px; }
-    .now strong { font-family: var(--ib-f-mono); font-weight: 600; }
+    .loopbox {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 16px;
+    }
+    pre.loop {
+      margin: 0;
+      background: var(--ib-code-bg);
+      color: var(--ib-fg);
+      border-radius: 8px;
+      padding: 10px 0;
+      overflow-x: auto;
+      font-family: var(--ib-f-mono);
+      font-size: 12.5px;
+      line-height: 1.55;
+    }
+    pre.loop span {
+      display: block;
+      padding: 0 12px;
+      transition: background 0.15s;
+    }
+    pre.loop span.on {
+      background: var(--ib-hl);
+    }
+    pre.loop .c {
+      color: var(--ib-muted);
+    }
+    .now {
+      font-size: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .now strong {
+      font-family: var(--ib-f-mono);
+      font-weight: 600;
+    }
 
-    .insights { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
-    .card { background: var(--ib-surface); border: 1px solid var(--ib-line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-    .card .big { font-family: var(--ib-f-mono); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
-    .card p { font-size: 14px; color: var(--ib-muted); }
-    .card p.ch { color: var(--ib-fg); }
-    .card p b { color: var(--ib-fg); }
-    .bars { display: flex; flex-direction: column; gap: 8px; }
-    .barrow { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 8px; align-items: center; font-size: 12px; }
-    .bar { height: 18px; border-radius: 3px; background: var(--ib-decode); position: relative; min-width: 2px; }
-    .toks { display: flex; gap: 3px; margin-top: 3px; }
-    .tok { width: 9px; height: 9px; border-radius: 50%; background: var(--ib-decode); }
-    table.f { border-collapse: collapse; font-size: 13px; width: 100%; margin: 0; }
-    table.f th, table.f td { text-align: left; padding: 4px 6px; border: 0; border-bottom: 1px solid var(--ib-line); color: var(--ib-fg); }
-    table.f th { font-weight: 600; color: var(--ib-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
-    table.f td { font-family: var(--ib-f-mono); font-variant-numeric: tabular-nums; }
-    .note { font-size: 12.5px; color: var(--ib-muted); }
+    .insights {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+    }
+    .card {
+      background: var(--ib-surface);
+      border: 1px solid var(--ib-line);
+      border-radius: 10px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-width: 0;
+    }
+    .card .big {
+      font-family: var(--ib-f-mono);
+      font-size: 22px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .card p {
+      font-size: 14px;
+      color: var(--ib-muted);
+    }
+    .card p.ch {
+      color: var(--ib-fg);
+    }
+    .card p b {
+      color: var(--ib-fg);
+    }
+    .bars {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .barrow {
+      display: grid;
+      grid-template-columns: 62px minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+      font-size: 12px;
+    }
+    .bar {
+      height: 18px;
+      border-radius: 3px;
+      background: var(--ib-decode);
+      position: relative;
+      min-width: 2px;
+    }
+    .toks {
+      display: flex;
+      gap: 3px;
+      margin-top: 3px;
+    }
+    .tok {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--ib-decode);
+    }
+    table.f {
+      border-collapse: collapse;
+      font-size: 13px;
+      width: 100%;
+      margin: 0;
+    }
+    table.f th,
+    table.f td {
+      text-align: left;
+      padding: 4px 6px;
+      border: 0;
+      border-bottom: 1px solid var(--ib-line);
+      color: var(--ib-fg);
+    }
+    table.f th {
+      font-weight: 600;
+      color: var(--ib-muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    table.f td {
+      font-family: var(--ib-f-mono);
+      font-variant-numeric: tabular-nums;
+    }
+    .note {
+      font-size: 12.5px;
+      color: var(--ib-muted);
+    }
   }
 
   [data-theme="dark"] .ib-root {
@@ -211,9 +534,13 @@ import Wide from "@/components/Wide.astro";
   }
 
   @media (max-width: 760px) {
-    .ib-root .loopbox { grid-template-columns: minmax(0, 1fr); }
+    .ib-root .loopbox {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
   @media (prefers-reduced-motion: reduce) {
-    .ib-root pre.loop span { transition: none; }
+    .ib-root pre.loop span {
+      transition: none;
+    }
   }
 </style>

@@ -1,0 +1,1664 @@
+---
+/**
+ * Harness: build the harness around a model, one job and one part at a time.
+ * Meant for a Lab entry with `fullscreen: true`. Progress lives in
+ * localStorage. The board is built by harness/ui.js.
+ *
+ *   import AgentHarness from "@/components/widgets/AgentHarness.astro";
+ *   <AgentHarness />
+ */
+---
+
+<div class="ah">
+  <noscript>This game needs JavaScript.</noscript>
+</div>
+
+<script>
+  import { mountHarness } from "./harness/ui.js";
+  const mountAll = () =>
+    document.querySelectorAll<HTMLElement>(".ah").forEach(mountHarness);
+  document.addEventListener("astro:page-load", mountAll);
+  mountAll();
+</script>
+
+<style is:global>
+  .ah {
+    --ah-bg: #efeeea;
+    --ah-card: #f8f7f4;
+    --ah-ink: #24262b;
+    --ah-mute: #868990;
+    --ah-tile: #ffffff;
+    --ah-edge: #d3d1c9;
+    --ah-line: #e2e0d9;
+    --ah-accent: #4b5bdc;
+    --ah-accent-edge: #3441a8;
+    --ah-on-accent: #ffffff;
+    --ah-red: #df4f3c;
+    --ah-amber: #e3a21c;
+    --ah-green: #2c9a6a;
+    --ah-blue: #3486cf;
+    --ah-task: #f4c430;
+    --ah-g0: #ef476f;
+    --ah-g1: #06a77d;
+    --ah-g2: #118ab2;
+    --ah-g3: #8f5fd7;
+    --ah-g4: #f08c00;
+    --ah-ease: cubic-bezier(0.23, 1, 0.32, 1);
+
+    position: relative;
+    min-height: 100svh;
+    background: var(--ah-bg);
+    color: var(--ah-ink);
+    font-family:
+      ui-rounded,
+      "SF Pro Rounded",
+      "Nunito",
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      sans-serif;
+    font-size: 15px;
+    line-height: 1.4;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    overflow-x: clip;
+  }
+  [data-theme="dark"] .ah {
+    --ah-bg: #15171c;
+    --ah-card: #1b1e25;
+    --ah-ink: #eceef2;
+    --ah-mute: #8b909b;
+    --ah-tile: #272b35;
+    --ah-edge: #0d0f13;
+    --ah-line: #2c313c;
+    --ah-accent: #6c7bff;
+    --ah-accent-edge: #4250c9;
+    --ah-task: #d9aa1e;
+  }
+  .lab-full:has(.ah) .lab-back {
+    color: var(--ah-mute, #868990);
+    position: absolute;
+  }
+  .lab-full:has(.ah) .lab-back:hover {
+    color: #4b5bdc;
+  }
+
+  .ah button {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+  .ah button:disabled {
+    cursor: default;
+  }
+  .ah :focus-visible {
+    outline: 2px solid var(--ah-accent);
+    outline-offset: 2px;
+  }
+  .ah [hidden] {
+    display: none !important;
+  }
+  .ah .ah-i {
+    width: 1.35em;
+    height: 1.35em;
+    flex: none;
+  }
+
+  .ah-wrap {
+    box-sizing: border-box;
+    min-height: 100svh;
+    padding: 10px 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* ---- header ---- */
+  .ah-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding-left: 62px;
+  }
+  .ah-name {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+  }
+  .ah-pager {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-right: auto;
+  }
+  .ah-round:disabled {
+    opacity: 0.35;
+  }
+  .ah-tools {
+    display: flex;
+    gap: 6px;
+  }
+  .ah-round {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--ah-tile) !important;
+    box-shadow: 0 2px 0 var(--ah-edge);
+    color: var(--ah-mute) !important;
+    transition: transform 120ms var(--ah-ease);
+  }
+  .ah-round:active {
+    transform: translateY(2px);
+    box-shadow: none;
+  }
+  /* a "+1" that shows only while a new note lands */
+  .ah-round.ah-bump::after {
+    content: "+1";
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background: var(--ah-accent);
+    color: var(--ah-on-accent);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 16px;
+    animation: ah-plus 1600ms var(--ah-ease) both;
+  }
+  @keyframes ah-plus {
+    0% {
+      opacity: 0;
+      transform: translateY(6px) scale(0.6);
+    }
+    12%,
+    75% {
+      opacity: 1;
+      transform: none;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+  .ah-marquee {
+    position: absolute;
+    z-index: 5;
+    border: 1.5px solid var(--ah-accent);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--ah-accent) 12%, transparent);
+    pointer-events: none;
+  }
+  .ah-part.ah-lit {
+    outline: 3px solid var(--ah-accent) !important;
+    outline-offset: 2px;
+  }
+
+  /* ---- request, board ---- */
+  .ah-top {
+    text-align: center;
+  }
+  .ah-ask {
+    margin: 0 auto;
+    max-width: 46ch;
+    font-size: 19px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    text-wrap: balance;
+  }
+  .ah-tip {
+    margin: 4px auto 0;
+    min-height: 1.4em;
+    max-width: 60ch;
+    color: var(--ah-mute);
+    font-weight: 600;
+    text-wrap: pretty;
+  }
+  .ah-tip.ah-bad {
+    color: var(--ah-red);
+  }
+  .ah-board {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  /* ---- the map ---- */
+  .ah-c-context,
+  .ah-b-context {
+    --c: var(--ah-blue);
+  }
+  .ah-c-action,
+  .ah-b-action {
+    --c: var(--ah-green);
+  }
+  .ah-c-guard,
+  .ah-b-guard {
+    --c: var(--ah-red);
+  }
+  .ah-c-memory,
+  .ah-b-memory {
+    --c: var(--ah-amber);
+  }
+  .ah-c-verify,
+  .ah-b-verify {
+    --c: var(--ah-g3);
+  }
+  .ah-c-control,
+  .ah-b-control {
+    --c: var(--ah-accent);
+  }
+  .ah-map {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr minmax(96px, 0.7fr) 1fr;
+    grid-template-areas:
+      "control context guard"
+      "memory model action"
+      ". verify .";
+    flex: 1;
+    gap: 34px 26px;
+    align-items: center;
+    align-content: space-evenly;
+    margin: 8px 0 0;
+    padding: 18px 12px;
+    border: 1.5px dashed var(--ah-edge);
+    border-radius: 20px;
+  }
+  .ah-map::before {
+    content: "harness";
+    position: absolute;
+    top: -9px;
+    left: 16px;
+    padding: 0 8px;
+    background: var(--ah-bg);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ah-mute);
+  }
+  .ah-wires {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: visible;
+  }
+  .ah-wire {
+    fill: none;
+    stroke: var(--c, var(--ah-mute));
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    opacity: 0.6;
+  }
+  .ah-port {
+    fill: var(--ah-bg);
+    stroke: var(--c, var(--ah-mute));
+    stroke-width: 2.5;
+  }
+  .ah-idlewire .ah-wire {
+    stroke: var(--ah-mute);
+    stroke-dasharray: 3 7;
+    opacity: 0.45;
+  }
+  .ah-idlewire .ah-port {
+    stroke: color-mix(in srgb, var(--ah-mute) 50%, var(--ah-bg));
+  }
+  /* a wire that is carrying something: dashes moving the way it goes */
+  .ah-flowin .ah-wire,
+  .ah-flowout .ah-wire {
+    stroke-width: 3.5;
+    stroke-dasharray: 2 9;
+    opacity: 1;
+    animation: ah-flow 500ms linear infinite;
+  }
+  .ah-flowout .ah-wire {
+    animation-direction: reverse;
+  }
+  .ah-flowin .ah-port,
+  .ah-flowout .ah-port {
+    fill: var(--c);
+  }
+  @keyframes ah-flow {
+    to {
+      stroke-dashoffset: -22;
+    }
+  }
+  .ah-w-context {
+    --c: var(--ah-blue);
+  }
+  .ah-w-action {
+    --c: var(--ah-green);
+  }
+  .ah-w-guard {
+    --c: var(--ah-red);
+  }
+  .ah-w-memory {
+    --c: var(--ah-amber);
+  }
+  .ah-w-verify {
+    --c: var(--ah-g3);
+  }
+  .ah-w-control {
+    --c: var(--ah-accent);
+  }
+  .ah-branch {
+    position: relative;
+    z-index: 1;
+    justify-self: center;
+    min-width: 64px;
+    min-height: 64px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    padding: 16px 10px 10px;
+    border-radius: 18px;
+    border: 1.5px solid color-mix(in srgb, var(--c) 32%, var(--ah-bg));
+    background: color-mix(in srgb, var(--c) 6%, var(--ah-bg));
+  }
+  .ah-b-control {
+    grid-area: control;
+  }
+  .ah-b-context {
+    grid-area: context;
+  }
+  .ah-b-guard {
+    grid-area: guard;
+  }
+  .ah-b-memory {
+    grid-area: memory;
+  }
+  .ah-b-action {
+    grid-area: action;
+  }
+  .ah-b-verify {
+    grid-area: verify;
+  }
+  .ah-branch.ah-fog {
+    background: transparent;
+    border-color: transparent;
+  }
+  .ah-branch.ah-fog::after {
+    content: "?";
+    margin: auto;
+    font-size: 20px;
+    font-weight: 800;
+    color: color-mix(in srgb, var(--ah-edge) 70%, transparent);
+  }
+  /* the section's name sits on the panel's top edge, like a tab */
+  .ah-branch h3 {
+    position: absolute;
+    top: -9px;
+    left: 50%;
+    translate: -50% 0;
+    margin: 0;
+    padding: 0 8px;
+    border-radius: 6px;
+    background: var(--ah-bg);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    line-height: 16px;
+    white-space: nowrap;
+    color: var(--c);
+  }
+  .ah-parts {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+  }
+  .ah-part {
+    position: relative;
+    width: 64px;
+    padding: 7px 1px 5px !important;
+    border-radius: 13px;
+    display: flex !important;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    background: color-mix(in srgb, var(--c) 14%, var(--ah-tile)) !important;
+    box-shadow: 0 3px 0 color-mix(in srgb, var(--c) 40%, var(--ah-edge));
+    color: var(--c) !important;
+    transition:
+      transform 120ms var(--ah-ease),
+      box-shadow 120ms var(--ah-ease),
+      background-color 160ms var(--ah-ease),
+      color 160ms,
+      opacity 150ms;
+  }
+  .ah-part .ah-i {
+    width: 20px;
+    height: 20px;
+  }
+  .ah-part span {
+    font-size: 9.5px;
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--ah-ink);
+    text-align: center;
+  }
+  .ah-part:active {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 color-mix(in srgb, var(--c) 40%, var(--ah-edge));
+  }
+  .ah-part.ah-off {
+    background: transparent !important;
+    box-shadow: inset 0 0 0 1.5px var(--ah-edge);
+    color: var(--ah-mute) !important;
+  }
+  .ah-part.ah-off span {
+    color: var(--ah-mute);
+  }
+  .ah-part.ah-new {
+    animation: ah-settle 260ms var(--ah-ease);
+  }
+  .ah-hinted {
+    outline: 3px solid var(--ah-accent) !important;
+    outline-offset: 2px !important;
+  }
+  .ah-model {
+    grid-area: model;
+    position: relative;
+    z-index: 1;
+    justify-self: center;
+    width: 96px;
+    height: 88px;
+    border-radius: 20px;
+    background: var(--ah-tile);
+    box-shadow: 0 5px 0 var(--ah-edge);
+    display: grid;
+    place-items: end center;
+    padding-bottom: 9px;
+  }
+  .ah-model b {
+    font-size: 13px;
+    font-weight: 800;
+  }
+  .ah-dot {
+    position: absolute;
+    left: -7px;
+    top: -7px;
+    z-index: 4;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--c, var(--ah-accent));
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 28%, transparent);
+    opacity: 0;
+    pointer-events: none;
+    will-change: transform;
+  }
+  .ah-gem {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--ah-ink);
+    opacity: 0.55;
+    flex: none;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .ah-part:hover {
+      transform: translateY(-1px);
+    }
+    .ah-round:hover {
+      color: var(--ah-ink) !important;
+    }
+  }
+
+  /* ---- the bot ---- */
+  .ah-bot {
+    position: absolute;
+    left: 50%;
+    top: 50px;
+    width: 0;
+    height: 0;
+    z-index: 3;
+    pointer-events: none;
+  }
+  .ah-body {
+    position: absolute;
+    left: -17px;
+    top: -38px;
+    width: 34px;
+    height: 32px;
+    border-radius: 13px 13px 11px 11px;
+    background: var(--ah-accent);
+    box-shadow: inset 0 -4px 0 var(--ah-accent-edge);
+    display: grid;
+    place-items: center;
+    transform-origin: 50% 100%;
+    transition: rotate 220ms var(--ah-ease);
+  }
+  .ah-ant {
+    position: absolute;
+    left: -1px;
+    top: -45px;
+    width: 2px;
+    height: 8px;
+    background: var(--ah-accent-edge);
+    transform-origin: 50% 100%;
+  }
+  .ah-ant::after {
+    content: "";
+    position: absolute;
+    left: -2px;
+    top: -5px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ah-task);
+  }
+  .ah-visor {
+    width: 24px;
+    height: 12px;
+    margin-top: -3px;
+    border-radius: 6px;
+    background: #14161c;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+  }
+  .ah-visor i {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 160ms var(--ah-ease);
+  }
+  .ah-bot[data-face="think"] .ah-visor i {
+    transform: translateY(-2px);
+  }
+  .ah-bot[data-face="confused"] .ah-visor i:first-child {
+    transform: scale(1.6);
+  }
+  .ah-bot[data-face="confused"] .ah-body {
+    rotate: -8deg;
+  }
+  .ah-bot[data-face="alarm"] .ah-visor i {
+    transform: scale(1.5);
+    background: #ff8a7a;
+  }
+  .ah-bot[data-face="happy"] .ah-visor i {
+    height: 2px;
+    border-radius: 2px;
+    transform: scaleX(1.5);
+  }
+  .ah-bot[data-face="happy"] .ah-body {
+    animation: ah-bounce 600ms 1;
+  }
+  .ah-bot[data-face="sad"] .ah-visor i,
+  .ah-bot[data-face="dizzy"] .ah-visor i {
+    height: 2px;
+    transform: rotate(45deg) scaleX(1.6);
+  }
+  .ah-bot[data-face="dizzy"] .ah-body {
+    animation: ah-wobble 900ms ease-in-out infinite;
+  }
+  .ah-bot[data-face="sad"] .ah-body {
+    rotate: 6deg;
+  }
+  /* ---- the model chip ---- */
+  .ah-modelchip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    height: 32px;
+    border-radius: 16px;
+    background: var(--ah-tile);
+    box-shadow: 0 2px 0 var(--ah-edge);
+    color: var(--ah-mute);
+  }
+  .ah .ah-chipmain {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 32px;
+    padding: 0 4px 0 10px;
+    border-radius: 16px 0 0 16px;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: inherit;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .ah .ah-chipinfo {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 32px;
+    border-radius: 0 16px 16px 0;
+    color: var(--ah-mute);
+  }
+  .ah-chipinfo .ah-i {
+    width: 16px;
+    height: 16px;
+  }
+  .ah-pop {
+    position: absolute;
+    z-index: 30;
+    top: calc(100% + 8px);
+    right: 0;
+    width: min(300px, calc(100vw - 24px));
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: var(--ah-card);
+    box-shadow:
+      0 0 0 1.5px var(--ah-edge),
+      0 10px 30px rgb(0 0 0 / 0.18);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--ah-ink);
+    white-space: normal;
+  }
+  .ah-pop a {
+    color: var(--ah-accent);
+    font-weight: 800;
+    text-decoration: underline;
+  }
+  .ah-short {
+    display: none;
+  }
+  .ah-chipmain i {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ah-edge);
+  }
+  .ah-modelchip[data-state="real"] {
+    color: var(--ah-ink);
+  }
+  .ah-modelchip[data-state="real"] i {
+    background: var(--ah-green);
+  }
+  .ah-modelchip[data-state="loading"] i {
+    background: var(--ah-amber);
+    animation: ah-blink 1s ease-in-out infinite;
+  }
+  .ah-modelchip[data-state="failed"] i {
+    background: var(--ah-red);
+  }
+
+  /* ---- the level tiles ---- */
+  .ah-pips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+  }
+  .ah .ah-pip {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    border: 1.5px dashed var(--ah-edge);
+    background: transparent !important;
+    color: var(--ah-mute) !important;
+    font-size: 13px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    transition:
+      background 200ms var(--ah-ease),
+      transform 120ms var(--ah-ease);
+  }
+  .ah .ah-pip[data-state="open"] {
+    border: 1.5px solid var(--c);
+    background: color-mix(in srgb, var(--c) 16%, var(--ah-tile)) !important;
+    color: var(--ah-ink) !important;
+  }
+  .ah .ah-pip[data-state="done"] {
+    border: 1.5px solid var(--c);
+    background: var(--c) !important;
+    color: #fff !important;
+    box-shadow: 0 2px 0 color-mix(in srgb, var(--c) 60%, #000);
+  }
+  .ah .ah-pip[aria-current="true"] {
+    outline: 2px solid var(--ah-ink);
+    outline-offset: 2px;
+  }
+  .ah-pip:disabled {
+    cursor: default;
+    opacity: 0.7;
+  }
+  .ah-pip:not(:disabled):active {
+    transform: translateY(2px);
+  }
+  @media (max-width: 520px) {
+    .ah-pips {
+      gap: 5px;
+    }
+    .ah .ah-pip {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      font-size: 12px;
+    }
+  }
+
+  /* ---- the level-cleared card ---- */
+  .ah-kicker {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ah-mute);
+  }
+  .ah-cleared .ah-sheettitle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 4px 0 12px;
+    font-size: 28px;
+    color: var(--c);
+  }
+  .ah-cleared .ah-sheettitle span {
+    color: var(--ah-ink);
+  }
+  .ah-cleared .ah-sheettitle .ah-i {
+    width: 30px;
+    height: 30px;
+  }
+  .ah-cleared .ah-evals {
+    margin-bottom: 12px;
+  }
+  .ah .ah-added {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    margin: 10px 0 0;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: var(--ah-tile) !important;
+    color: var(--ah-ink) !important;
+    font-weight: 700;
+    text-align: left;
+  }
+  .ah-added span {
+    flex: 1;
+  }
+  .ah-added .ah-i:last-child {
+    color: var(--ah-mute);
+  }
+  .ah-added .ah-i {
+    width: 18px;
+    height: 18px;
+  }
+  .ah-cardbtns {
+    display: grid;
+    grid-template-columns: 1fr 1.4fr;
+    gap: 8px;
+    margin-top: 16px;
+  }
+  .ah-fly {
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 60;
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    border-radius: 12px;
+    background: var(--c);
+    color: #fff;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .ah-fly .ah-i {
+    width: 20px;
+    height: 20px;
+  }
+  .ah-round.ah-bump {
+    animation: ah-bump 520ms var(--ah-ease);
+  }
+  @keyframes ah-bump {
+    30% {
+      transform: scale(1.35);
+    }
+  }
+  /* ---- the ending ---- */
+  .ah-kicker .ah-i {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    margin-right: 6px;
+    vertical-align: -2px;
+    color: var(--ah-amber);
+  }
+  .ah-finale .ah-sheettitle {
+    margin: 4px 0 14px;
+    font-size: 28px;
+  }
+  .ah-eq {
+    display: grid;
+    grid-template-columns: 1fr auto 1.3fr auto 1fr;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .ah-eq > span {
+    display: grid;
+    gap: 2px;
+    align-content: center;
+    padding: 10px 8px;
+    border-radius: 14px;
+    background: var(--ah-tile);
+    text-align: center;
+  }
+  .ah-eq b {
+    font-size: 15px;
+    font-weight: 800;
+  }
+  .ah-eq small {
+    font-size: 11px;
+    color: var(--ah-mute);
+    line-height: 1.25;
+  }
+  .ah-eq > i {
+    align-self: center;
+    font-style: normal;
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--ah-mute);
+  }
+  .ah-eq .ah-eq-h {
+    border: 1.5px dashed var(--ah-edge);
+    background: transparent;
+  }
+  .ah-eq .ah-eq-a {
+    background: var(--ah-accent);
+    color: var(--ah-on-accent);
+  }
+  .ah-eq .ah-eq-a small {
+    color: inherit;
+    opacity: 0.85;
+  }
+  .ah-proof {
+    margin: 12px 0 18px;
+    text-wrap: pretty;
+  }
+  .ah-sums {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+  }
+  .ah-sums li {
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: var(--ah-tile);
+    border-left: 4px solid var(--c);
+  }
+  .ah-sums li > div {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+  }
+  .ah-sums b {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--c);
+  }
+  .ah-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .ah-chips i {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px 2px 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--c) 14%, var(--ah-tile));
+    font-style: normal;
+    font-size: 11.5px;
+    font-weight: 700;
+  }
+  .ah-chips .ah-i {
+    width: 13px;
+    height: 13px;
+    color: var(--c);
+  }
+  .ah-party .ah-chips i {
+    animation: ah-settle 320ms var(--ah-ease) backwards;
+  }
+  .ah-sums p {
+    margin: 6px 0 0;
+    font-size: 13.5px;
+    text-wrap: pretty;
+  }
+  .ah-close-line {
+    margin: 16px 0 0;
+    font-weight: 700;
+    text-wrap: pretty;
+  }
+  @media (max-width: 520px) {
+    .ah-eq {
+      grid-template-columns: 1fr;
+    }
+    .ah-eq > i {
+      justify-self: center;
+      line-height: 1;
+    }
+  }
+  .ah-note.ah-here {
+    box-shadow: 0 0 0 2px var(--c);
+  }
+  @keyframes ah-blink {
+    50% {
+      opacity: 0.3;
+    }
+  }
+
+  /* ---- the trace ---- */
+  .ah-side {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 12px;
+    border-radius: 20px;
+    background: var(--ah-card);
+    box-shadow: 0 1px 0 var(--ah-line);
+  }
+  .ah-sidehead {
+    display: flex;
+    align-items: center;
+    min-height: 28px;
+    margin-bottom: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ah-mute);
+  }
+  .ah-sidehead .ah-runs {
+    margin-left: auto;
+  }
+  .ah-sidehead > span {
+    margin-right: 10px;
+  }
+  .ah-flip[hidden] {
+    display: none;
+  }
+  .ah-flip {
+    display: flex;
+    padding: 2px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--ah-edge) 35%, transparent);
+  }
+  .ah .ah-flip button {
+    padding: 3px 10px;
+    border-radius: 8px;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--ah-mute);
+  }
+  .ah .ah-flip button[aria-pressed="true"] {
+    background: var(--ah-tile);
+    color: var(--ah-ink);
+    box-shadow: 0 1px 0 var(--ah-edge);
+  }
+  .ah-trace {
+    flex: 1;
+    min-height: 200px;
+    max-height: 46svh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    font-size: 13px;
+    line-height: 1.35;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .ah-with,
+  .ah-idle,
+  .ah-evalhead {
+    margin: 0 0 6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ah-mute);
+  }
+  .ah-idle {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .ah-evalhead {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1.5px dashed var(--ah-edge);
+    font-variant-numeric: tabular-nums;
+  }
+  .ah-line {
+    display: flex;
+    gap: 8px;
+    padding: 3px 0;
+    animation: ah-linein 180ms var(--ah-ease) both;
+  }
+  .ah-line b {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    align-self: flex-start;
+    width: 7.4em;
+    font-weight: 800;
+    color: var(--c, var(--ah-ink));
+  }
+  .ah-line b .ah-i {
+    width: 13px;
+    height: 13px;
+  }
+  .ah-line span {
+    min-width: 0;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+  .ah-k-model span,
+  .ah-k-tool span {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .ah-k-tool span {
+    color: var(--ah-mute);
+  }
+  .ah-k-user span {
+    font-weight: 700;
+  }
+  .ah-k-system span {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ah-mute);
+  }
+  .ah-k-part:has(.ah-tag) span {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .ah-tag {
+    display: block;
+    margin-bottom: 2px;
+    font-family: var(--ah-font, inherit);
+    font-size: 10.5px;
+    font-style: normal;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--c);
+  }
+  .ah-fold:not(.ah-open):has(.ah-tag) span {
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+  }
+  /* the raw view */
+  .ah-raw {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    line-height: 1.45;
+  }
+  .ah-msg {
+    padding: 2px 0 2px 12px;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    color: var(--ah-mute);
+  }
+  .ah-msg:first-child,
+  .ah-msg:nth-last-child(2) {
+    padding-left: 0;
+  }
+  .ah-msg.ah-fold:not(.ah-open) {
+    max-height: 6em;
+    overflow: hidden;
+    mask-image: linear-gradient(#000 60%, transparent);
+  }
+  .ah-msg.ah-fold:not(.ah-open) span {
+    display: inline;
+  }
+  .ah-jk {
+    color: var(--ah-ink);
+    font-weight: 700;
+  }
+  .ah-jr {
+    font-weight: 800;
+    color: var(--ah-accent);
+  }
+  .ah-jr-system {
+    color: var(--ah-blue);
+  }
+  .ah-jr-user {
+    color: var(--ah-ink);
+  }
+  .ah-jr-tool {
+    color: var(--ah-green);
+  }
+  .ah-rawnote {
+    margin: 8px 0 0;
+    font-family: var(--ah-font, inherit);
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--ah-mute);
+  }
+  .ah-k-part {
+    margin: 1px -6px;
+    padding: 3px 6px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--c) 10%, transparent);
+  }
+  .ah-k-end span,
+  .ah-line.ah-bad span {
+    color: var(--ah-red);
+  }
+  .ah-line.ah-good span {
+    color: var(--ah-green);
+  }
+  .ah-fold {
+    cursor: pointer;
+  }
+  .ah-fold:not(.ah-open) span {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .ah-askrow {
+    display: flex;
+    gap: 8px;
+    margin: 4px 0 6px 7.4em;
+    padding-left: 8px;
+  }
+  .ah-askrow .ah-btn {
+    height: 34px;
+    padding: 0 18px !important;
+    border-radius: 17px;
+    font-size: 13px;
+    box-shadow: 0 3px 0 var(--ah-edge);
+  }
+  .ah-askrow .ah-btn.ah-run {
+    box-shadow: 0 3px 0 var(--ah-accent-edge);
+  }
+  .ah-rule {
+    margin: 8px 0;
+    text-align: center;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--ah-mute);
+  }
+  .ah-evalsbox {
+    margin-top: 10px;
+    padding: 8px 12px 10px;
+    border-radius: 14px;
+    background: var(--ah-tile);
+    box-shadow: 0 2px 0 var(--ah-edge);
+  }
+  .ah-evalmeta {
+    letter-spacing: 0;
+    text-transform: none;
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+  }
+  .ah-evals {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 5px;
+    font-size: 13.5px;
+  }
+  .ah-evals li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+  }
+  .ah-evals .ah-i,
+  .ah-evals li > i {
+    flex: none;
+    box-sizing: border-box;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+  }
+  .ah-evals .ah-i {
+    padding: 2px;
+    stroke-width: 3.5;
+    color: #fff;
+    background: var(--ah-green);
+  }
+  .ah-evals .ah-e-no .ah-i {
+    background: var(--ah-red);
+  }
+  .ah-evals .ah-e-todo {
+    color: var(--ah-mute);
+  }
+  .ah-evals li > i {
+    border: 2px solid var(--ah-edge);
+  }
+  @keyframes ah-linein {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+
+  /* ---- buttons ---- */
+  .ah-actions {
+    display: grid;
+    grid-template-columns: 1fr 2.4fr 52px;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .ah-btn.ah-speed {
+    font-variant-numeric: tabular-nums;
+    color: var(--ah-mute);
+  }
+  .ah-btn {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    height: 48px;
+    border-radius: 24px;
+    background: var(--ah-tile) !important;
+    box-shadow: 0 4px 0 var(--ah-edge);
+    font-weight: 800;
+    transition:
+      transform 120ms var(--ah-ease),
+      box-shadow 120ms var(--ah-ease),
+      opacity 150ms;
+  }
+  .ah-btn:not(:disabled):active {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 var(--ah-edge);
+  }
+  .ah-btn:disabled {
+    opacity: 0.4;
+  }
+  .ah-btn.ah-run {
+    background: var(--ah-accent) !important;
+    color: var(--ah-on-accent) !important;
+    box-shadow: 0 4px 0 var(--ah-accent-edge);
+  }
+  .ah-btn.ah-run:not(:disabled):active {
+    box-shadow: 0 1px 0 var(--ah-accent-edge);
+  }
+
+  /* ---- overlays ---- */
+  .ah-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: rgb(20 22 28 / 0.45);
+    animation: ah-fade 180ms ease-out both;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .ah-sheet {
+    position: relative;
+    width: min(560px, 100%);
+    max-height: min(86svh, 760px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--ah-card);
+    border-radius: 24px;
+    padding: 22px 20px 20px;
+    animation: ah-rise 260ms var(--ah-ease) both;
+  }
+  .ah-close {
+    position: absolute !important;
+    top: 14px;
+    right: 14px;
+  }
+  .ah-sheettitle {
+    margin: 0 0 4px;
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+  .ah-sub {
+    margin: 0 0 14px;
+    color: var(--ah-mute);
+    font-weight: 600;
+  }
+  .ah-notes {
+    display: grid;
+    gap: 10px;
+  }
+  .ah-note {
+    text-align: left;
+    background: var(--ah-tile);
+    border-radius: 16px;
+    padding: 14px;
+  }
+  .ah-note header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--c, var(--ah-accent));
+  }
+  .ah-note header .ah-i {
+    width: 26px;
+    height: 26px;
+  }
+  .ah-note small {
+    font-size: 10px;
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--ah-mute);
+  }
+  .ah-note h4 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--ah-ink);
+  }
+  .ah-note p {
+    margin: 8px 0 0;
+    text-wrap: pretty;
+  }
+  .ah-note .ah-wild {
+    color: var(--ah-mute);
+    font-size: 13.5px;
+  }
+  .ah-note .ah-wild b {
+    display: block;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .ah-note.ah-locked {
+    opacity: 0.5;
+  }
+  .ah-note.ah-locked header {
+    color: var(--ah-mute);
+  }
+
+  /* ---- motion ---- */
+  /* quick off the ground, then falling under its own weight */
+  @keyframes ah-bounce {
+    0% {
+      animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+    }
+    50% {
+      transform: translateY(-9px) scale(0.95, 1.06);
+      animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0);
+    }
+  }
+  @keyframes ah-wobble {
+    25% {
+      rotate: -10deg;
+    }
+    75% {
+      rotate: 10deg;
+    }
+  }
+  @keyframes ah-settle {
+    from {
+      transform: scale(0.94);
+    }
+  }
+  .ah-overlay.ah-leaving {
+    animation: ah-fadeout 140ms cubic-bezier(0.4, 0, 1, 1) both;
+  }
+  .ah-leaving .ah-sheet {
+    animation: ah-sink 140ms cubic-bezier(0.4, 0, 1, 1) both;
+  }
+  .ah-sheet.ah-swap {
+    animation: ah-fade 120ms ease-out both;
+  }
+  @keyframes ah-fadeout {
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes ah-sink {
+    to {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+  @keyframes ah-fade {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes ah-rise {
+    from {
+      opacity: 0;
+      transform: translateY(14px) scale(0.98);
+    }
+  }
+
+  @media (max-width: 480px) {
+    .ah-wrap {
+      padding: 8px 12px 14px;
+    }
+    .ah-name {
+      display: none;
+    }
+    .ah-head {
+      gap: 8px;
+      padding-left: 50px;
+    }
+    .ah-ask {
+      font-size: 17px;
+    }
+    .ah-line {
+      flex-direction: column;
+      gap: 0;
+    }
+    .ah-line b {
+      width: auto;
+    }
+    .ah-askrow {
+      margin-left: 0;
+      padding-left: 0;
+    }
+    .ah-long {
+      display: none;
+    }
+    .ah-short {
+      display: inline !important;
+    }
+    .ah .ah-chipmain {
+      padding: 0 2px 0 8px;
+      font-size: 11.5px;
+    }
+    .ah-pips {
+      gap: 3px;
+    }
+    .ah .ah-pip {
+      height: 32px;
+    }
+    .ah-tip {
+      min-height: 2.8em;
+    }
+    .ah-map {
+      gap: 14px 10px;
+      padding: 22px 4px 10px;
+      margin-top: 8px;
+      grid-template-columns: 1fr 118px 1fr;
+    }
+    .ah-branch {
+      padding: 12px 3px 6px;
+      border-radius: 14px;
+    }
+    .ah-parts {
+      gap: 4px;
+    }
+    .ah-branch h3 {
+      font-size: 9px;
+      padding: 0 5px;
+    }
+    .ah-part {
+      width: 51px;
+      padding: 6px 1px 4px !important;
+      border-radius: 11px;
+    }
+    .ah-part span {
+      font-size: 8px;
+      letter-spacing: -0.03em;
+    }
+    .ah-part .ah-i {
+      width: 18px;
+      height: 18px;
+    }
+    .ah-parts {
+      gap: 5px 4px;
+    }
+    .ah-model {
+      width: 78px;
+      height: 84px;
+    }
+    .ah-round {
+      width: 34px;
+      height: 34px;
+    }
+    .ah-overlay {
+      place-items: end center;
+      padding: 0;
+    }
+    .ah-sheet {
+      border-radius: 24px 24px 0 0;
+      padding-bottom: calc(20px + env(safe-area-inset-bottom));
+    }
+  }
+
+  @media (min-width: 900px) {
+    /* the page is one screen tall when the board fits, and grows with the
+       board when it doesn't; the trace never makes it taller */
+    .ah-side {
+      /* its content has no say in the row's height: the row is as tall as
+         the board or the space left on screen, and the trace scrolls inside */
+      contain: size;
+      overflow: hidden;
+    }
+    .ah-board {
+      flex: 1;
+      grid-template-columns: minmax(0, 1fr) min(460px, 38vw);
+    }
+    .ah-map {
+      grid-template-columns: 1fr minmax(214px, 0.7fr) 1fr;
+    }
+    .ah-trace {
+      min-height: 0;
+      max-height: none;
+    }
+    .ah-map {
+      gap: 22px 48px;
+      padding: 12px;
+    }
+    .ah-part {
+      width: 84px;
+      padding: 10px 2px 8px !important;
+      border-radius: 15px;
+    }
+    .ah-part .ah-i {
+      width: 26px;
+      height: 26px;
+    }
+    .ah-part span {
+      font-size: 11.5px;
+    }
+    .ah-branch h3 {
+      font-size: 12px;
+    }
+    .ah-branch {
+      padding: 20px 14px 14px;
+    }
+    .ah-parts {
+      gap: 8px;
+    }
+    .ah-model {
+      scale: 1.3;
+    }
+  }
+
+  /* a short window: smaller parts and tighter rows, so the board still
+     fits without scrolling */
+  @media (min-width: 900px) and (max-height: 860px) {
+    .ah-map {
+      gap: 12px 30px;
+      padding: 16px 10px 8px;
+      grid-template-columns: 1fr minmax(176px, 0.7fr) 1fr;
+    }
+    .ah-part {
+      width: 68px;
+      padding: 6px 1px 5px !important;
+      border-radius: 12px;
+    }
+    .ah-part .ah-i {
+      width: 20px;
+      height: 20px;
+    }
+    .ah-part span {
+      font-size: 10px;
+    }
+    .ah-branch {
+      padding: 14px 8px 8px;
+    }
+    .ah-parts {
+      gap: 5px;
+    }
+    .ah-model {
+      scale: 1;
+    }
+    .ah-ask {
+      font-size: 17px;
+    }
+  }
+
+  /* reduced motion: nothing slides or bounces, but things still fade */
+  @media (prefers-reduced-motion: reduce) {
+    .ah *,
+    .ah *::after {
+      animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important;
+    }
+    .ah .ah-overlay,
+    .ah .ah-sheet,
+    .ah .ah-line {
+      animation: ah-fade 150ms ease-out both !important;
+    }
+    .ah .ah-overlay.ah-leaving,
+    .ah .ah-leaving .ah-sheet {
+      animation: ah-fadeout 140ms ease-in both !important;
+    }
+  }
+</style>
