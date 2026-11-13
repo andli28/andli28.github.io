@@ -34,7 +34,12 @@ const hasVideoPip = () =>
 
 export const miniSupported = () => hasDocumentPip() || hasVideoPip();
 
-const INK = "34, 31, 28";
+// The site's own light and dark backgrounds and text.
+const THEME = {
+  light: { bg: "#fdfdfd", ink: "40, 39, 40" },
+  dark: { bg: "#212737", ink: "234, 237, 243" },
+};
+const INK = THEME.light.ink;
 
 const MINI_CSS = `
   :root { color-scheme: light; }
@@ -46,11 +51,21 @@ const MINI_CSS = `
     align-items: center;
     gap: 14px;
     padding: 12px 16px;
-    background: #f0eeea;
+    background: ${THEME.light.bg};
     color: rgb(${INK});
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
     user-select: none;
     overflow: hidden;
+  }
+  body[data-theme="dark"] {
+    background: ${THEME.dark.bg};
+    color: rgb(${THEME.dark.ink});
+    color-scheme: dark;
+  }
+  body[data-theme="dark"] .label { color: rgba(${THEME.dark.ink}, 0.6); }
+  body[data-theme="dark"] button {
+    background: rgb(${THEME.dark.ink});
+    color: ${THEME.dark.bg};
   }
   .fruit { width: 64px; height: 72px; }
   .fruit * { transition: fill 200ms ease; }
@@ -268,12 +283,13 @@ export function createMini({ onToggle, onTick, onClose }) {
     const time = fmtClock(left);
     // Same scale as the big dial: a full ring is 60 minutes.
     const frac = Math.min(1, left / DIAL_MS);
-    const key = `${time}|${frac.toFixed(3)}|${view.label}|${view.running}|${view.started}|${view.mode}|${Object.values(view.colors).join()}`;
+    const key = `${time}|${frac.toFixed(3)}|${view.label}|${view.running}|${view.started}|${view.mode}|${Object.values(view.colors).join()}|${view.dark}`;
     if (key === painted) return;
     painted = key;
     if (pip) {
       const body = pip.document.body;
       body.toggleAttribute("data-paused", !view.running && view.started);
+      body.dataset.theme = view.dark ? "dark" : "light";
       for (const [part, node] of Object.entries(nodes.parts)) {
         node.setAttribute("fill", view.colors[part]);
       }
@@ -294,7 +310,8 @@ export function createMini({ onToggle, onTick, onClose }) {
     const ctx = canvas.getContext("2d");
     const { width: w, height: h } = canvas;
     const c = view.colors;
-    ctx.fillStyle = "#f0eeea";
+    const theme = THEME[view.dark ? "dark" : "light"];
+    ctx.fillStyle = theme.bg;
     ctx.fillRect(0, 0, w, h);
 
     // The little fruit, at 2.2x the document window's scale.
@@ -341,11 +358,13 @@ export function createMini({ onToggle, onTick, onClose }) {
     ctx.restore();
 
     ctx.fillStyle =
-      view.running || !view.started ? `rgb(${INK})` : `rgba(${INK}, 0.5)`;
+      view.running || !view.started
+        ? `rgb(${theme.ink})`
+        : `rgba(${theme.ink}, 0.5)`;
     ctx.font = "600 64px ui-monospace, Menlo, monospace";
     ctx.textBaseline = "alphabetic";
     ctx.fillText(time, 200, h / 2 + 8);
-    ctx.fillStyle = `rgba(${INK}, 0.6)`;
+    ctx.fillStyle = `rgba(${theme.ink}, 0.6)`;
     ctx.font = "italic 28px Georgia, serif";
     const label =
       view.label.length > 26 ? `${view.label.slice(0, 25)}…` : view.label;

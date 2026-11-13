@@ -422,15 +422,18 @@ const FRUITS = [
 </script>
 
 <style is:global>
-  /* Flat, warm paper, like the Lab thumbnail. Each fruit sets its own skin,
-     face and wedge; --ft-focus is its accent for the rest of the UI. */
+  /* Flat, like the Lab thumbnail, on the site's own background, light or
+     dark. Each fruit sets its own skin, face and wedge; --ft-focus is its
+     accent for the rest of the UI. */
   .ft {
-    --ft-bg: #f0eeea;
-    --ft-ink-rgb: 34 31 28;
+    --ft-bg: var(--background);
+    --ft-ink-rgb: 40 39 40;
     --ft-ink: rgb(var(--ft-ink-rgb));
     --ft-dim: rgb(var(--ft-ink-rgb) / 0.58);
     --ft-faint: rgb(var(--ft-ink-rgb) / 0.16);
     --ft-surface: rgb(255 255 255 / 0.96);
+    --ft-shadow-rgb: 60 40 20;
+    --ft-scheme: light;
     --ft-break: #2e9a6c;
     --ft-color: var(--ft-focus);
     --ft-hot: var(--ft-color);
@@ -447,10 +450,20 @@ const FRUITS = [
     --fruit-wedge: #f2a33a;
     --fruit-leaf: #2e9a6c;
     --fruit-stem: #23774f;
+    /* Ticks and numerals sit on the light face in either theme. */
+    --fruit-ink: 40 39 40;
+
+    /* The page is exactly one screen: the dial shrinks to fit instead of
+       the page scrolling. */
+    --ft-dial: clamp(
+      150px,
+      min(84vw, calc((100svh - 22.5rem) * 0.93), 540px),
+      540px
+    );
 
     position: relative;
     display: grid;
-    min-height: 100svh;
+    height: 100svh;
     place-items: center;
     overflow: hidden;
     background: var(--ft-bg);
@@ -458,6 +471,22 @@ const FRUITS = [
     font-family: var(--font-google-sans-code), ui-monospace, monospace;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
+  }
+  [data-theme="dark"] .ft {
+    --ft-ink-rgb: 234 237 243;
+    --ft-surface: rgb(44 52 72 / 0.97);
+    --ft-shadow-rgb: 0 0 0;
+    --ft-scheme: dark;
+  }
+  .ft.has-plan {
+    --ft-dial: clamp(
+      150px,
+      min(84vw, calc((100svh - 25rem) * 0.93), 540px),
+      540px
+    );
+  }
+  html:has(.ft) {
+    overflow: hidden;
   }
   .ft[data-fruit="orange"] {
     --ft-focus: #e0701a;
@@ -507,17 +536,17 @@ const FRUITS = [
   .ft[data-fruit="watermelon"] [data-fruit-only="watermelon"] {
     display: inline;
   }
-  /* The back link sits outside .ft, so it can't read the --ft-* tokens. */
+  /* The back link sits outside .ft, so it uses the site's tokens. */
   .lab-full:has(.ft) .lab-back {
-    color: rgb(34 31 28 / 0.58);
+    color: color-mix(in srgb, var(--foreground) 58%, transparent);
   }
   @media (hover: hover) and (pointer: fine) {
     .lab-full:has(.ft) .lab-back:hover {
-      color: rgb(34 31 28);
+      color: var(--foreground);
     }
   }
   .lab-full:has(.ft) .lab-back:focus-visible {
-    color: rgb(34 31 28);
+    color: var(--foreground);
   }
 
   /* Light behind the dial; dims as the session runs out. One layer per
@@ -637,7 +666,7 @@ const FRUITS = [
     border: 1px solid var(--ft-faint);
     border-radius: 12px;
     background: var(--ft-surface);
-    box-shadow: 0 18px 40px rgb(60 40 20 / 0.14);
+    box-shadow: 0 18px 40px rgb(var(--ft-shadow-rgb) / 0.14);
     font-size: 0.8rem;
     opacity: 0;
     transform: scale(0.96);
@@ -769,10 +798,10 @@ const FRUITS = [
 
   .ft-dial {
     position: relative;
-    width: min(84vw, 62svh, 540px);
+    width: var(--ft-dial);
     aspect-ratio: 1;
     /* Room for the stem and leaves, which reach above the SVG box. */
-    margin-top: calc(min(84vw, 62svh, 540px) * 0.07);
+    margin-top: calc(var(--ft-dial) * 0.07);
     touch-action: none;
     cursor: grab;
   }
@@ -837,16 +866,16 @@ const FRUITS = [
     fill: var(--ft-wedge);
   }
   .ft-tick {
-    stroke: rgb(var(--ft-ink-rgb) / 0.14);
+    stroke: rgb(var(--fruit-ink) / 0.14);
     stroke-width: 1.5;
     stroke-linecap: round;
   }
   .ft-major {
-    stroke: rgb(var(--ft-ink-rgb) / 0.3);
+    stroke: rgb(var(--fruit-ink) / 0.3);
     stroke-width: 4;
   }
   .ft-num {
-    fill: rgb(var(--ft-ink-rgb) / 0.5);
+    fill: rgb(var(--fruit-ink) / 0.5);
     font-size: 11px;
     text-anchor: middle;
     dominant-baseline: central;
@@ -1035,7 +1064,7 @@ const FRUITS = [
     border: 1px solid var(--ft-faint);
     border-radius: 999px;
     background: var(--ft-surface);
-    box-shadow: 0 10px 30px rgb(60 40 20 / 0.12);
+    box-shadow: 0 10px 30px rgb(var(--ft-shadow-rgb) / 0.12);
     color: var(--ft-ink);
     font-size: 0.8rem;
     white-space: nowrap;
@@ -1096,7 +1125,7 @@ const FRUITS = [
   }
   .ft-plan-until input {
     width: auto;
-    color-scheme: light;
+    color-scheme: var(--ft-scheme);
     text-align: left;
   }
   .ft-plan-quick {
@@ -1263,7 +1292,7 @@ const FRUITS = [
     border: 1px solid var(--ft-faint);
     border-radius: 10px;
     background: var(--ft-surface);
-    box-shadow: 0 10px 30px rgb(60 40 20 / 0.14);
+    box-shadow: 0 10px 30px rgb(var(--ft-shadow-rgb) / 0.14);
     color: var(--ft-dim);
     transform: translateX(-50%);
     /* A popover for its block: grows up out of it. */

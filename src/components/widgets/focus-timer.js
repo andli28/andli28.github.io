@@ -226,6 +226,7 @@ export function mountFocusTimer(root) {
       running: state.running,
       started: inProgress(),
       colors: fruitColors(state.fruit, focus),
+      dark: document.documentElement.dataset.theme === "dark",
     };
   }
 
