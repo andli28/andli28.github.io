@@ -1,6 +1,6 @@
 ---
 /**
- * Full-screen focus timer: name a task, twist the dial, focus.
+ * Full-screen focus timer: twist the dial, focus. Naming the task is optional.
  * Meant for a Lab entry with `fullscreen: true`. State lives in localStorage.
  *
  *   import FocusTimer from "@/components/widgets/FocusTimer.astro";
@@ -409,8 +409,6 @@ const FRUITS = [
     <span class="ft-dots" data-ft="dots"></span>
     <span data-ft="total"></span>
   </div>
-
-  <p class="ft-hint">name it · twist the dial · tap to pause</p>
 </div>
 
 <script>
@@ -453,13 +451,7 @@ const FRUITS = [
     /* Ticks and numerals sit on the light face in either theme. */
     --fruit-ink: 40 39 40;
 
-    /* The page is exactly one screen: the dial shrinks to fit instead of
-       the page scrolling. */
-    --ft-dial: clamp(
-      150px,
-      min(84vw, calc((100svh - 22.5rem) * 0.93), 540px),
-      540px
-    );
+    --ft-dial: min(84vw, 62svh, 540px);
 
     position: relative;
     display: grid;
@@ -478,13 +470,7 @@ const FRUITS = [
     --ft-shadow-rgb: 0 0 0;
     --ft-scheme: dark;
   }
-  .ft.has-plan {
-    --ft-dial: clamp(
-      150px,
-      min(84vw, calc((100svh - 25rem) * 0.93), 540px),
-      540px
-    );
-  }
+  /* The page is exactly one screen and never scrolls. */
   html:has(.ft) {
     overflow: hidden;
   }
@@ -751,7 +737,7 @@ const FRUITS = [
     display: grid;
     justify-items: center;
     gap: clamp(1.25rem, 3.5vh, 2.25rem);
-    padding: 4rem 1rem 6rem;
+    padding: 3.5rem 1rem 2.5rem;
   }
 
   .ft-tabs {
@@ -944,10 +930,6 @@ const FRUITS = [
     background: var(--ft-color);
     transform: scaleX(1);
   }
-  .ft.needs-task .ft-task::after {
-    background: var(--ft-hot);
-    transform: scaleX(1);
-  }
   /* While a session runs the line reads as a title; the writing line comes
      back when you hover or click in to rename it. */
   .ft[data-state="running"] .ft-task:not(:focus-within)::after,
@@ -1007,9 +989,6 @@ const FRUITS = [
   .ft-task input:focus::placeholder {
     color: rgb(var(--ft-ink-rgb) / 0.3);
   }
-  .ft.needs-task .ft-task input::placeholder {
-    color: var(--ft-hot);
-  }
 
   .ft-today {
     position: absolute;
@@ -1032,25 +1011,6 @@ const FRUITS = [
     height: 7px;
     border-radius: 50%;
     background: var(--ft-focus);
-  }
-
-  .ft-hint {
-    position: absolute;
-    right: 1rem;
-    bottom: 1.1rem;
-    left: 1rem;
-    color: rgb(var(--ft-ink-rgb) / 0.35);
-    font-size: 0.75rem;
-    text-align: center;
-    pointer-events: none;
-  }
-  .ft-today:not([hidden]) ~ .ft-hint {
-    bottom: 2.6rem;
-  }
-  @media (min-width: 720px) {
-    .ft-today:not([hidden]) ~ .ft-hint {
-      bottom: 1.1rem;
-    }
   }
 
   /* ---- Gentle note ---------------------------------------------------- */
@@ -1180,11 +1140,8 @@ const FRUITS = [
   }
 
   /* ---- Timeline strip ------------------------------------------------- */
-  .ft.has-plan .ft-hint {
-    display: none;
-  }
   .ft.has-plan .ft-stage {
-    padding-bottom: 8.5rem;
+    padding-bottom: 7rem;
   }
   .ft-strip {
     position: absolute;

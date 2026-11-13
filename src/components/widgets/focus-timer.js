@@ -212,10 +212,7 @@ export function mountFocusTimer(root) {
   function miniView() {
     const left = Math.max(0, remainingMs());
     const focus = state.mode === "focus";
-    let label = focus ? state.task || "focus" : KIND_NAME[state.breakKind];
-    if (focus && !inProgress() && root.classList.contains("needs-task")) {
-      label = "name a task first";
-    }
+    const label = focus ? state.task || "focus" : KIND_NAME[state.breakKind];
     return {
       // The mini window counts down from these itself.
       endAt: state.running ? state.endAt : null,
@@ -381,11 +378,6 @@ export function mountFocusTimer(root) {
     state.cycleDay = dayKey(end);
   }
 
-  function needTask() {
-    root.classList.add("needs-task");
-    el.task.focus();
-  }
-
   function tryStart() {
     if (state.running) return;
     if (state.plan && state.planPaused) {
@@ -396,11 +388,6 @@ export function mountFocusTimer(root) {
     }
     if (remainingMs() <= 0) return;
     cancelSweep();
-    if (state.mode === "focus" && !el.task.value.trim()) {
-      needTask();
-      render();
-      return;
-    }
     ensureAudio(); // unlock audio during a user gesture
     if (state.mode === "focus") state.task = el.task.value.trim();
     if (state.startedAt == null) state.startedAt = Date.now();
@@ -717,7 +704,6 @@ export function mountFocusTimer(root) {
     const m = minutesAt(e, { guard: false });
     dragMinutes = m;
     setLength(m * MIN);
-    root.classList.remove("needs-task");
     render();
   });
 
@@ -760,7 +746,6 @@ export function mountFocusTimer(root) {
       }
       const from = Math.max(0, remainingMs());
       goTo(key);
-      root.classList.remove("needs-task");
       save();
       render();
       animateWedge(from, state.setMs, SWEEP_SWITCH_MS);
@@ -899,7 +884,6 @@ export function mountFocusTimer(root) {
     state.planIdx = null;
     state.planPaused = false;
     el.task.value = "";
-    root.classList.remove("needs-task");
     const from = Math.max(0, remainingMs());
     goTo("focus");
     save();
@@ -1056,7 +1040,6 @@ export function mountFocusTimer(root) {
   });
 
   el.task.addEventListener("input", () => {
-    if (el.task.value.trim()) root.classList.remove("needs-task");
     renderRecent();
   });
   // Renaming mid-session: the task line stays editable while a focus
@@ -1294,7 +1277,6 @@ export function mountFocusTimer(root) {
         chip.title = task;
         chip.addEventListener("click", () => {
           el.task.value = task;
-          root.classList.remove("needs-task");
           el.task.focus();
           renderRecent();
         });
