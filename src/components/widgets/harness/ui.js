@@ -21,8 +21,10 @@ const LAST = TASKS.length - 1;
 const REAL = MODEL.name;
 // How long each trace line holds, and how long a signal takes to cross a
 // wire, in ms at 1× speed.
-const PACE = { line: 475, signal: 340, type: 17 };
-const SPEEDS = [1, 2, 0.5];
+// The speed setting divides these. It paces the animation only: the real
+// model generates at its own rate whatever the speed.
+const PACE = { line: 300, signal: 340, type: 17, card: 650 };
+const SPEEDS = [1, 2, 4, 0.5];
 // Which way a harness step travels: out from the model, in to it, or both.
 const FLOW = {
   feedback: ["out", "in"],
@@ -260,7 +262,7 @@ export function mountHarness(root) {
   const syncSpeed = () => {
     speedBtn.textContent = `${state.speed}×`;
     speedBtn.title =
-      speedBtn.ariaLabel = `Speed: ${{ 0.5: "half", 1: "normal", 2: "double" }[state.speed]}. Tap to change.`;
+      speedBtn.ariaLabel = `Speed: ${{ 0.5: "half", 1: "normal", 2: "double", 4: "four times" }[state.speed]}. Tap to change.`;
   };
   speedBtn.addEventListener("click", () => {
     state.speed = SPEEDS[(SPEEDS.indexOf(state.speed) + 1) % SPEEDS.length];
@@ -1001,7 +1003,7 @@ export function mountHarness(root) {
           : "Every eval passes. That's the whole harness."
       );
       // let the win show before the card covers it
-      if (!still()) await wait(650);
+      if (!still()) await wait(PACE.card / state.speed);
       if (alive()) showCleared(res, first);
     } else {
       botEl.dataset.face = "sad";
