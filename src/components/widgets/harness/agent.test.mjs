@@ -356,3 +356,15 @@ test("with History off, the check starts again on the next message", async () =>
   const r = await runTask(task("follow"), parts, model);
   assert.equal(r.checked > 0, true);
 });
+
+test("with Sandbox hiding an unasked write, Permissions comes first", async () => {
+  const edit = task("edit");
+  let parts = ["tools", "sandbox"];
+  let r = await runTask(edit, parts, standIn());
+  let d = diagnose(edit, parts, r);
+  assert.deepEqual([d.part, d.turn], ["perms", "on"]);
+  parts = [...parts, "perms"];
+  r = await runTask(edit, parts, standIn());
+  d = diagnose(edit, parts, r);
+  assert.deepEqual([d.part, d.turn], ["sandbox", "off"]);
+});

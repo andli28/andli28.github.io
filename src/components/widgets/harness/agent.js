@@ -1147,6 +1147,12 @@ export function diagnose(task, parts, r) {
       );
   }
   if (failed("config.json now says 9000")) {
+    // taking the sandbox away first would let the write through unasked
+    if (h.sandbox && r.writes && !h.perms)
+      return fix(
+        "Sandbox kept the write in a scratch copy, so the real config.json never changed. Before the write can be let through, something has to ask you first.",
+        "perms"
+      );
     if (h.sandbox && r.writes)
       return fix(
         "Sandbox kept the write in a scratch copy, so the real config.json never changed.",
