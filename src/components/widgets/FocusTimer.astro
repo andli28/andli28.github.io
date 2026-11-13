@@ -465,9 +465,6 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
     --ft-shadow-rgb: 60 40 20;
     --ft-scheme: light;
     --ft-break: #2e9a6c;
-    /* Breaks: the flesh turns a soft warm gray, calm and natural on every
-       fruit (the timeline keeps green for its break blocks). */
-    --ft-rest: #b3aea6;
     --ft-color: var(--ft-focus);
     --ft-hot: var(--ft-color);
     --ft-wedge: var(--fruit-wedge);
@@ -481,6 +478,9 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
     --fruit-face: #ffffff;
     --fruit-face-shade: #c23f2f;
     --fruit-wedge: #f2a33a;
+    /* During a break the flesh fades to a pale version of itself (the
+       timeline keeps green for its break blocks). */
+    --fruit-rest: #e8c392;
     --fruit-seed: #fff1c2;
     --fruit-leaf: #2e9a6c;
     --fruit-stem: #23774f;
@@ -519,6 +519,7 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
     --fruit-face-shade: #f0c27a;
     /* Juicy yellow-orange flesh, split by white pith. */
     --fruit-wedge: #ffbe2e;
+    --fruit-rest: #f0c09a;
     --fruit-seed: #fffaf0;
     --fruit-leaf: #2e9a6c;
     --fruit-stem: #6b4226;
@@ -532,6 +533,7 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
     --fruit-face-shade: #e9d4a4;
     /* Golden flesh with brown pips, not the red of the skin. */
     --fruit-wedge: #f2b134;
+    --fruit-rest: #e6cf98;
     --fruit-seed: #5b3416;
     --fruit-leaf: #2e9a6c;
     --fruit-stem: #6b4226;
@@ -545,13 +547,14 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
     --fruit-face: #ffe4e1;
     --fruit-face-shade: #b9dca0;
     --fruit-wedge: #ef4b5a;
+    --fruit-rest: #e8a0a4;
     --fruit-seed: #2a1c18;
     --fruit-leaf: #2e9a6c;
     --fruit-stem: #6b4226;
   }
   .ft[data-mode="break"] {
-    --ft-color: var(--ft-rest);
-    --ft-wedge: var(--ft-rest);
+    --ft-color: var(--fruit-rest);
+    --ft-wedge: var(--fruit-rest);
   }
   /* Parts that belong to one fruit only. */
   .ft [data-fruit-only] {
@@ -594,7 +597,7 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
   .ft-glow-break {
     background: radial-gradient(
       circle at 50% 42%,
-      color-mix(in srgb, var(--ft-rest) 32%, transparent) 0,
+      color-mix(in srgb, var(--fruit-rest) 40%, transparent) 0,
       transparent 55%
     );
   }
