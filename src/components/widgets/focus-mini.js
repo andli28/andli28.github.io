@@ -1,14 +1,48 @@
 // A small always-on-top timer window ("pop out").
 //
 // Chrome/Edge: Document Picture-in-Picture, a real mini window with a
-// progress ring, the time, the task and a pause button.
+// little fruit dial (the same fruit as the page), the time, the task and a
+// pause button.
 // Safari and others with video PiP: the same view drawn on a canvas and
 // shown as a picture-in-picture video; its play/pause button drives the
 // timer.
 
-import { COLORS, DIAL_MS, fmtClock } from "./focus-shared.js";
+import { DIAL_MS, fmtClock, wedgePath } from "./focus-shared.js";
 
-const RING = 2 * Math.PI * 30;
+// Styles for the fruit SVG copied from the dial (see fruitArt in
+// focus-timer.js), which carries its colors as --fruit-* variables. Keep in
+// step with the dial's part styles in FocusTimer.astro.
+const ART_CSS = `
+  .ft-skin { fill: var(--fruit-skin); }
+  .ft-skin-shade { fill: var(--fruit-shade); }
+  .ft-rind { fill: var(--fruit-rind); }
+  .ft-face { fill: var(--fruit-face); }
+  .ft-face-shade { fill: var(--fruit-face-shade); }
+  .ft-leaf { fill: var(--fruit-leaf); }
+  .ft-stem { fill: var(--fruit-stem); }
+  .ft-stem-line {
+    fill: none;
+    stroke: var(--fruit-stem);
+    stroke-width: 9;
+    stroke-linecap: round;
+  }
+  .ft-stripe { stroke: var(--fruit-shade); stroke-width: 15; stroke-linecap: round; }
+  .ft-dimple { fill: var(--fruit-shade); opacity: 0.55; }
+  .ft-seed { fill: var(--fruit-seed); }
+  .ft-segment { stroke: var(--fruit-seed); stroke-width: 5; stroke-linecap: round; }
+  .ft-wedge { fill: var(--ft-wedge); }
+  .ft-hub-disc { fill: #18181c; }
+`;
+
+/** The fruit as a standalone SVG document, with the wedge drawn in. */
+function artDocument(art, frac) {
+  return art
+    .replace(
+      /^<svg([^>]*)>/,
+      `<svg$1 width="360" height="394"><style>${ART_CSS}</style>`
+    )
+    .replace('class="ft-wedge"', `class="ft-wedge" d="${wedgePath(frac)}"`);
+}
 
 const hasDocumentPip = () =>
   typeof window !== "undefined" && "documentPictureInPicture" in window;
@@ -20,8 +54,15 @@ const hasVideoPip = () =>
 
 export const miniSupported = () => hasDocumentPip() || hasVideoPip();
 
+// The site's own light and dark backgrounds and text.
+const THEME = {
+  light: { bg: "#fdfdfd", ink: "40, 39, 40" },
+  dark: { bg: "#212737", ink: "234, 237, 243" },
+};
+const INK = THEME.light.ink;
+
 const MINI_CSS = `
-  :root { color-scheme: dark; }
+  :root { color-scheme: light; }
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; }
   body {
@@ -29,42 +70,26 @@ const MINI_CSS = `
     grid-template-columns: auto 1fr auto;
     align-items: center;
     gap: 14px;
-    padding: 14px 16px;
-    background: #0b0b0d;
-    color: #ece8e1;
+    padding: 12px 16px;
+    background: ${THEME.light.bg};
+    color: rgb(${INK});
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
     user-select: none;
     overflow: hidden;
   }
-  /* One glow layer per mode, crossfaded (gradients can't be animated). */
-  body::before,
-  body::after {
-    position: fixed;
-    inset: 0;
-    content: "";
-    pointer-events: none;
-    transition: opacity 300ms ease;
+  body[data-theme="dark"] {
+    background: ${THEME.dark.bg};
+    color: rgb(${THEME.dark.ink});
+    color-scheme: dark;
   }
-  body::before {
-    background: radial-gradient(circle at 20% 50%, ${COLORS.focus.glow} 0, transparent 60%);
+  body[data-theme="dark"] .label { color: rgba(${THEME.dark.ink}, 0.6); }
+  body[data-theme="dark"] button {
+    background: rgb(${THEME.dark.ink});
+    color: ${THEME.dark.bg};
   }
-  body::after {
-    background: radial-gradient(circle at 20% 50%, ${COLORS.break.glow} 0, transparent 60%);
-    opacity: 0;
-  }
-  body[data-mode="break"]::before { opacity: 0; }
-  body[data-mode="break"]::after { opacity: 1; }
-  body > * { position: relative; z-index: 1; }
-  svg { width: 64px; height: 64px; transform: rotate(-90deg); }
-  .track { fill: none; stroke: rgb(236 232 225 / 0.1); stroke-width: 6; }
-  .ring {
-    fill: none;
-    stroke: var(--color);
-    stroke-width: 6;
-    stroke-linecap: round;
-    stroke-dasharray: ${RING.toFixed(2)};
-    transition: stroke 300ms ease;
-  }
+  .fruit { width: 64px; height: 70px; }
+  .fruit svg { display: block; width: 100%; height: 100%; }
+  ${ART_CSS}
   .text { min-width: 0; }
   .time {
     font-size: 30px;
@@ -75,7 +100,7 @@ const MINI_CSS = `
   body[data-paused] .time { opacity: 0.5; }
   .label {
     overflow: hidden;
-    color: rgb(236 232 225 / 0.6);
+    color: rgba(${INK}, 0.6);
     font-family: "Iowan Old Style", "New York", ui-serif, Georgia, serif;
     font-size: 14px;
     font-style: italic;
@@ -87,10 +112,10 @@ const MINI_CSS = `
     width: 36px;
     height: 36px;
     place-items: center;
-    border: 1px solid rgb(236 232 225 / 0.18);
+    border: 0;
     border-radius: 50%;
-    background: transparent;
-    color: #ece8e1;
+    background: #18181c;
+    color: #f7f4ee;
     cursor: pointer;
     transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
   }
@@ -100,7 +125,7 @@ const MINI_CSS = `
     button { transition: none; }
     button[data-pressed] { transform: none; }
   }
-  button svg { width: 14px; height: 14px; transform: none; }
+  button svg { width: 14px; height: 14px; }
 `;
 
 const ICON_PAUSE =
@@ -187,16 +212,14 @@ export function createMini({ onToggle, onTick, onClose }) {
     style.textContent = MINI_CSS;
     doc.head.append(style);
     doc.body.innerHTML = `
-      <svg viewBox="0 0 72 72" aria-hidden="true">
-        <circle class="track" cx="36" cy="36" r="30"></circle>
-        <circle class="ring" cx="36" cy="36" r="30"></circle>
-      </svg>
+      <div class="fruit" aria-hidden="true"></div>
       <div class="text">
         <div class="time" role="timer"></div>
         <div class="label"></div>
       </div>
       <button type="button"></button>`;
-    nodes.ring = doc.querySelector(".ring");
+    nodes.fruit = doc.querySelector(".fruit");
+    nodes.art = null; // a new window: draw the fruit into it
     nodes.time = doc.querySelector(".time");
     nodes.label = doc.querySelector(".label");
     nodes.button = doc.querySelector("button");
@@ -270,15 +293,19 @@ export function createMini({ onToggle, onTick, onClose }) {
     const time = fmtClock(left);
     // Same scale as the big dial: a full ring is 60 minutes.
     const frac = Math.min(1, left / DIAL_MS);
-    const key = `${time}|${frac.toFixed(3)}|${view.label}|${view.running}|${view.started}|${view.mode}`;
+    const key = `${time}|${frac.toFixed(3)}|${view.label}|${view.running}|${view.started}|${view.mode}|${view.artKey}|${view.dark}`;
     if (key === painted) return;
     painted = key;
     if (pip) {
       const body = pip.document.body;
-      body.style.setProperty("--color", view.color);
-      body.dataset.mode = view.mode;
       body.toggleAttribute("data-paused", !view.running && view.started);
-      nodes.ring.style.strokeDashoffset = String(RING * (1 - frac));
+      body.dataset.theme = view.dark ? "dark" : "light";
+      if (nodes.art !== view.art) {
+        nodes.art = view.art;
+        nodes.fruit.innerHTML = view.art;
+        nodes.wedge = nodes.fruit.querySelector(".ft-wedge");
+      }
+      nodes.wedge.setAttribute("d", wedgePath(frac));
       nodes.time.textContent = time;
       nodes.label.textContent = view.label;
       nodes.button.innerHTML = view.running ? ICON_PAUSE : ICON_PLAY;
@@ -291,43 +318,42 @@ export function createMini({ onToggle, onTick, onClose }) {
     }
   }
 
+  // The fruit is drawn from the same SVG as the Document PiP window, as an
+  // image; frames that finish loading out of order are dropped.
+  let drawSeq = 0;
   function draw(time, frac) {
+    const seq = ++drawSeq;
+    const shown = view;
+    const img = new Image();
+    img.onload = () => {
+      if (seq === drawSeq && canvas) drawFrame(time, img, shown);
+    };
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+      artDocument(shown.art, frac)
+    )}`;
+  }
+
+  function drawFrame(time, img, shown) {
     const ctx = canvas.getContext("2d");
     const { width: w, height: h } = canvas;
-    ctx.fillStyle = "#0b0b0d";
+    const theme = THEME[shown.dark ? "dark" : "light"];
+    ctx.fillStyle = theme.bg;
     ctx.fillRect(0, 0, w, h);
-    const glow = ctx.createRadialGradient(120, h / 2, 0, 120, h / 2, 260);
-    glow.addColorStop(0, view.glow);
-    glow.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, w, h);
-
-    const cx = 104;
-    const cy = h / 2;
-    const r = 62;
-    ctx.lineWidth = 12;
-    ctx.lineCap = "round";
-    ctx.strokeStyle = "rgba(236,232,225,0.1)";
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.stroke();
-    if (frac > 0) {
-      ctx.strokeStyle = view.color;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
-      ctx.stroke();
-    }
+    const artH = h - 16;
+    ctx.drawImage(img, 16, 8, (artH * 360) / 394, artH);
 
     ctx.fillStyle =
-      view.running || !view.started ? "#ece8e1" : "rgba(236,232,225,0.5)";
+      shown.running || !shown.started
+        ? `rgb(${theme.ink})`
+        : `rgba(${theme.ink}, 0.5)`;
     ctx.font = "600 64px ui-monospace, Menlo, monospace";
     ctx.textBaseline = "alphabetic";
-    ctx.fillText(time, 200, cy + 8);
-    ctx.fillStyle = "rgba(236,232,225,0.6)";
+    ctx.fillText(time, 200, h / 2 + 8);
+    ctx.fillStyle = `rgba(${theme.ink}, 0.6)`;
     ctx.font = "italic 28px Georgia, serif";
     const label =
-      view.label.length > 26 ? `${view.label.slice(0, 25)}…` : view.label;
-    ctx.fillText(label, 202, cy + 52);
+      shown.label.length > 26 ? `${shown.label.slice(0, 25)}…` : shown.label;
+    ctx.fillText(label, 202, h / 2 + 52);
   }
 
   function teardown() {

@@ -27,6 +27,8 @@ export default defineConfig({
   // Keep links to the old Jekyll site working.
   redirects: {
     "/weblog": "/posts",
+    // The Pomodoro Timer's first address.
+    "/lab/focus-timer": "/lab/pomodoro",
   },
   integrations: [
     mdx(),

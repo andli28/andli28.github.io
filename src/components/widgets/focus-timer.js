@@ -8,7 +8,13 @@
 
 import { blockAt, buildPlan, describePlan } from "./focus-plan.js";
 import { createMini, miniSupported } from "./focus-mini.js";
-import { COLORS, DIAL_MS, MIN, fmtClock } from "./focus-shared.js";
+import {
+  DIAL_MS,
+  FRUIT_IDS,
+  MIN,
+  fmtClock,
+  wedgePath,
+} from "./focus-shared.js";
 
 const STORAGE_KEY = "lab-focus-timer-v2";
 const DEFAULTS = { focus: 25, short: 5, long: 15, every: 4 };
@@ -19,7 +25,6 @@ const LIMITS = {
   every: [2, 12],
 };
 const HISTORY_DAYS = 30;
-const WEDGE_R = 132;
 const SWEEP_PHASE_MS = 600; // a session ending: rare, can take its time
 const SWEEP_SWITCH_MS = 260; // clicking a mode tab: a UI response
 const TOAST_MS = 5000;
@@ -72,18 +77,6 @@ const fmtTime = ts =>
     .toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
     .toLowerCase();
 
-function wedgePath(ms) {
-  const frac = Math.min(1, Math.max(0, ms / DIAL_MS));
-  if (frac <= 0) return "";
-  if (frac >= 0.9999) {
-    return `M0,${-WEDGE_R}A${WEDGE_R},${WEDGE_R} 0 1 1 0,${WEDGE_R}A${WEDGE_R},${WEDGE_R} 0 1 1 0,${-WEDGE_R}Z`;
-  }
-  const a = frac * Math.PI * 2;
-  const x = (WEDGE_R * Math.sin(a)).toFixed(2);
-  const y = (-WEDGE_R * Math.cos(a)).toFixed(2);
-  return `M0,0L0,${-WEDGE_R}A${WEDGE_R},${WEDGE_R} 0 ${a > Math.PI ? 1 : 0} 1 ${x},${y}Z`;
-}
-
 function clampSetting(key, value) {
   const [lo, hi] = LIMITS[key];
   const n = Math.round(Number(value));
@@ -134,7 +127,11 @@ export function mountFocusTimer(root) {
     fields: [...root.querySelectorAll("[data-ft-set]")],
     resetToday: $("reset-today"),
     clearHistory: $("clear-history"),
+    fruitBtn: $("fruit-btn"),
+    fruitIcon: $("fruit-icon"),
+    fruits: [...root.querySelectorAll("[data-ft-fruit]")],
     panels: {
+      fruit: { btn: $("fruit-btn"), panel: $("fruit-panel") },
       settings: { btn: $("settings-btn"), panel: $("panel") },
       plan: { btn: $("plan-btn"), panel: $("plan-panel") },
     },
@@ -166,6 +163,7 @@ export function mountFocusTimer(root) {
   const state = {
     log: Array.isArray(saved.log) ? saved.log : [],
     sound: saved.sound ?? false,
+    fruit: FRUIT_IDS.includes(saved.fruit) ? saved.fruit : "tomato",
     notify: saved.notify ?? false,
     settings,
     plan: saved.plan?.blocks?.length ? saved.plan : null,
@@ -205,13 +203,81 @@ export function mountFocusTimer(root) {
     onClose: () => render(),
   });
 
+  // The pop-out and the fruit icons draw the same fruit as the dial: a copy
+  // of the dial's SVG without the ticks, numerals, hand and the other
+  // fruits' parts, carrying that fruit's colors as resolved from the page's
+  // CSS (read off a hidden probe, so any fruit can be drawn, not only the
+  // current one).
+  const ART_VARS = [
+    "--fruit-skin",
+    "--fruit-shade",
+    "--fruit-rind",
+    "--fruit-face",
+    "--fruit-face-shade",
+    "--fruit-leaf",
+    "--fruit-stem",
+    "--fruit-seed",
+    "--ft-wedge",
+  ];
+  const artCache = new Map();
+  function fruitSvg(fruit, mode, { icon = false } = {}) {
+    const key = `${fruit}|${mode}|${icon}`;
+    if (artCache.has(key)) return artCache.get(key);
+    const probe = document.createElement("div");
+    probe.className = "ft";
+    probe.dataset.fruit = fruit;
+    probe.dataset.mode = mode;
+    probe.style.display = "none";
+    root.append(probe);
+    const css = getComputedStyle(probe);
+    const vars = ART_VARS.map(
+      v => `${v}:${css.getPropertyValue(v).trim()}`
+    ).join(";");
+    probe.remove();
+
+    const svg = el.dial.querySelector("svg").cloneNode(true);
+    for (const n of svg.querySelectorAll(".ft-tick, .ft-num, .ft-hand")) {
+      n.remove();
+    }
+    for (const n of svg.querySelectorAll("[data-fruit-only]")) {
+      if (n.dataset.fruitOnly === fruit) n.removeAttribute("data-fruit-only");
+      else n.remove();
+    }
+    const wedge = svg.querySelector(".ft-wedge");
+    wedge.removeAttribute("d");
+    wedge.removeAttribute("data-ft");
+    // Icons show 25 minutes set, like the Lab thumbnail.
+    if (icon) wedge.setAttribute("d", wedgePath(25 / 60));
+    svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    // Room for the stem and leaves above the body.
+    svg.setAttribute("viewBox", "-180 -212 360 394");
+    svg.setAttribute("style", vars);
+    artCache.set(key, svg.outerHTML);
+    return artCache.get(key);
+  }
+
+  // An icon sits in the page beside the dial, so its clip-path ids get a
+  // suffix of their own instead of repeating the dial's.
+  let iconSeq = 0;
+  function fruitIcon(fruit) {
+    const n = ++iconSeq;
+    return fruitSvg(fruit, "focus", { icon: true }).replace(
+      /ft-(body-clip|wedge-clip|wedge-path)/g,
+      `$&-icon${n}`
+    );
+  }
+  for (const btn of el.fruits) {
+    btn.querySelector(".ft-fruit-art").innerHTML = fruitIcon(
+      btn.dataset.ftFruit
+    );
+  }
+
   function miniView() {
     const left = Math.max(0, remainingMs());
     const focus = state.mode === "focus";
-    let label = focus ? state.task || "focus" : KIND_NAME[state.breakKind];
-    if (focus && !inProgress() && root.classList.contains("needs-task")) {
-      label = "name a task first";
-    }
+    // Before a session starts, show what's typed in the task line so far.
+    const task = inProgress() ? state.task : el.task.value.trim();
+    const label = focus ? task || "focus" : KIND_NAME[state.breakKind];
     return {
       // The mini window counts down from these itself.
       endAt: state.running ? state.endAt : null,
@@ -221,8 +287,9 @@ export function mountFocusTimer(root) {
       mode: state.mode,
       running: state.running,
       started: inProgress(),
-      color: COLORS[focus ? "focus" : "break"].stroke,
-      glow: COLORS[focus ? "focus" : "break"].glow,
+      art: fruitSvg(state.fruit, state.mode),
+      artKey: `${state.fruit}|${state.mode}`,
+      dark: document.documentElement.dataset.theme === "dark",
     };
   }
 
@@ -232,11 +299,11 @@ export function mountFocusTimer(root) {
   function save() {
     const cutoff = Date.now() - HISTORY_DAYS * 86_400_000;
     state.log = state.log.filter(s => s.end >= cutoff);
-    const { log, sound, notify, settings, plan, ...timer } = state;
+    const { log, sound, fruit, notify, settings, plan, ...timer } = state;
     try {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ log, sound, notify, settings, plan, timer })
+        JSON.stringify({ log, sound, fruit, notify, settings, plan, timer })
       );
     } catch {
       // Storage can be unavailable (private mode); the timer still works.
@@ -377,11 +444,6 @@ export function mountFocusTimer(root) {
     state.cycleDay = dayKey(end);
   }
 
-  function needTask() {
-    root.classList.add("needs-task");
-    el.task.focus();
-  }
-
   function tryStart() {
     if (state.running) return;
     if (state.plan && state.planPaused) {
@@ -392,11 +454,6 @@ export function mountFocusTimer(root) {
     }
     if (remainingMs() <= 0) return;
     cancelSweep();
-    if (state.mode === "focus" && !el.task.value.trim()) {
-      needTask();
-      render();
-      return;
-    }
     ensureAudio(); // unlock audio during a user gesture
     if (state.mode === "focus") state.task = el.task.value.trim();
     if (state.startedAt == null) state.startedAt = Date.now();
@@ -713,7 +770,6 @@ export function mountFocusTimer(root) {
     const m = minutesAt(e, { guard: false });
     dragMinutes = m;
     setLength(m * MIN);
-    root.classList.remove("needs-task");
     render();
   });
 
@@ -756,7 +812,6 @@ export function mountFocusTimer(root) {
       }
       const from = Math.max(0, remainingMs());
       goTo(key);
-      root.classList.remove("needs-task");
       save();
       render();
       animateWedge(from, state.setMs, SWEEP_SWITCH_MS);
@@ -772,7 +827,9 @@ export function mountFocusTimer(root) {
     // position, unaffected by its closed-state scale.
     const b = btn.getBoundingClientRect();
     const panelLeft = root.getBoundingClientRect().left + panel.offsetLeft;
-    panel.style.transformOrigin = `${Math.round(b.left + b.width / 2 - panelLeft)}px 0`;
+    // A pill in the bottom half (the fruit button on phones) opens upward.
+    const fromBelow = b.top > window.innerHeight / 2;
+    panel.style.transformOrigin = `${Math.round(b.left + b.width / 2 - panelLeft)}px ${fromBelow ? "100%" : "0"}`;
     panel.dataset.open = "true";
     panel.inert = false;
     btn.setAttribute("aria-expanded", "true");
@@ -788,6 +845,9 @@ export function mountFocusTimer(root) {
       planPreview();
       el.planClear.hidden = !state.plan;
       el.planEnd.focus({ preventScroll: true });
+    } else if (name === "fruit") {
+      const current = el.fruits.find(b => b.dataset.ftFruit === state.fruit);
+      current?.focus({ preventScroll: true });
     } else {
       el.fields[0]?.focus({ preventScroll: true });
     }
@@ -892,7 +952,6 @@ export function mountFocusTimer(root) {
     state.planIdx = null;
     state.planPaused = false;
     el.task.value = "";
-    root.classList.remove("needs-task");
     const from = Math.max(0, remainingMs());
     goTo("focus");
     save();
@@ -978,7 +1037,7 @@ export function mountFocusTimer(root) {
   // Press feedback (a small scale) is set on pointer presses only, so
   // keyboard activation stays instant.
   const PRESSABLE =
-    "[data-ft='hub'], .ft-recent button, .ft-plan-quick button, .ft-plan-go";
+    "[data-ft='hub'], .ft-recent button, .ft-plan-quick button, .ft-plan-go, .ft-fruit-grid button";
   root.addEventListener("pointerdown", e => {
     const target = e.target.closest(PRESSABLE);
     if (target) target.dataset.pressed = "";
@@ -1012,6 +1071,15 @@ export function mountFocusTimer(root) {
     render();
   });
 
+  for (const btn of el.fruits) {
+    btn.addEventListener("click", () => {
+      state.fruit = btn.dataset.ftFruit;
+      save();
+      render();
+      mini.update(miniView());
+    });
+  }
+
   el.sound.addEventListener("click", () => {
     state.sound = !state.sound;
     if (state.sound) ensureAudio();
@@ -1040,8 +1108,8 @@ export function mountFocusTimer(root) {
   });
 
   el.task.addEventListener("input", () => {
-    if (el.task.value.trim()) root.classList.remove("needs-task");
     renderRecent();
+    mini.update(miniView());
   });
   // Renaming mid-session: the task line stays editable while a focus
   // session runs or is paused. The new name is saved on Enter or when you
@@ -1112,7 +1180,7 @@ export function mountFocusTimer(root) {
   // ---- Rendering ---------------------------------------------------------
 
   function drawDial(ms) {
-    el.wedge.setAttribute("d", wedgePath(ms));
+    el.wedge.setAttribute("d", wedgePath(ms / DIAL_MS));
     const deg = (Math.min(ms, DIAL_MS) / DIAL_MS) * 360;
     el.hand.setAttribute("transform", `rotate(${deg.toFixed(2)})`);
   }
@@ -1278,7 +1346,6 @@ export function mountFocusTimer(root) {
         chip.title = task;
         chip.addEventListener("click", () => {
           el.task.value = task;
-          root.classList.remove("needs-task");
           el.task.focus();
           renderRecent();
         });
@@ -1290,6 +1357,18 @@ export function mountFocusTimer(root) {
   function render() {
     const paused = !state.running && inProgress();
     root.dataset.mode = state.mode;
+    root.dataset.fruit = state.fruit;
+    for (const btn of el.fruits) {
+      btn.setAttribute(
+        "aria-pressed",
+        String(btn.dataset.ftFruit === state.fruit)
+      );
+    }
+    el.fruitBtn.setAttribute("aria-label", `Fruit: ${state.fruit}`);
+    if (el.fruitIcon.dataset.fruit !== state.fruit) {
+      el.fruitIcon.dataset.fruit = state.fruit;
+      el.fruitIcon.innerHTML = fruitIcon(state.fruit);
+    }
     root.dataset.state = state.running ? "running" : paused ? "paused" : "idle";
 
     const active = tabKey();
@@ -1352,8 +1431,7 @@ export function mountFocusTimer(root) {
 
   // ---- Start up ----------------------------------------------------------
 
-  el.panels.settings.panel.inert = true;
-  el.panels.plan.panel.inert = true;
+  for (const { panel } of Object.values(el.panels)) panel.inert = true;
 
   if (state.plan && Date.now() >= state.plan.end) {
     // The plan ended while the page was closed: wrap it up quietly.

@@ -1,42 +1,85 @@
 ---
 /**
- * Full-screen focus timer: name a task, twist the dial, focus.
+ * Full-screen focus timer: twist the dial, focus. Naming the task is optional.
  * Meant for a Lab entry with `fullscreen: true`. State lives in localStorage.
  *
  *   import FocusTimer from "@/components/widgets/FocusTimer.astro";
  *   <FocusTimer />
  */
 
-// Static dial face: a tick per minute, a longer one and a numeral every five.
+// The dial is a fruit seen from the front: skin, an inner face with a tick
+// per minute (a longer one and a numeral every five), and the fruit's own
+// stem or leaves on top. Radii are in the SVG's -200..200 box.
+const BODY_R = 164;
+const FACE_R = 128;
+const polar = (deg: number, r: number) => {
+  const a = (deg * Math.PI) / 180;
+  return [+(r * Math.sin(a)).toFixed(2), +(-r * Math.cos(a)).toFixed(2)];
+};
 const ticks = Array.from({ length: 60 }, (_, i) => {
   const major = i % 5 === 0;
-  const a = (i / 60) * Math.PI * 2;
-  const r1 = 182;
-  const r2 = major ? 168 : 175;
-  return {
-    major,
-    x1: +(r1 * Math.sin(a)).toFixed(2),
-    y1: +(-r1 * Math.cos(a)).toFixed(2),
-    x2: +(r2 * Math.sin(a)).toFixed(2),
-    y2: +(-r2 * Math.cos(a)).toFixed(2),
-  };
+  const [x1, y1] = polar(i * 6, 121);
+  const [x2, y2] = polar(i * 6, major ? 110 : 116);
+  return { major, x1, y1, x2, y2 };
 });
 const numerals = Array.from({ length: 12 }, (_, i) => {
-  const a = (i / 12) * Math.PI * 2;
-  return {
-    n: i * 5,
-    x: +(152 * Math.sin(a)).toFixed(2),
-    y: +(-152 * Math.cos(a)).toFixed(2),
-  };
+  const [x, y] = polar(i * 30, 98);
+  return { n: i * 5, x, y };
 });
+// Watermelon: dark stripes on the rind, seeds that show inside the wedge.
+const stripes = Array.from({ length: 12 }, (_, i) => {
+  const [x1, y1] = polar(i * 30 + 15, FACE_R);
+  const [x2, y2] = polar(i * 30 + 15, BODY_R + 10);
+  return { x1, y1, x2, y2 };
+});
+const seeds = [20, 62, 104, 146, 188, 230, 272, 314].map((deg, i) => {
+  const [x, y] = polar(deg, i % 2 ? 46 : 68);
+  return { x, y, rot: deg };
+});
+// Inside each fruit, shown only within the wedge (the "flesh"): tomato
+// seeds, orange segments, apple pips.
+const tomatoSeeds = Array.from({ length: 15 }, (_, i) => {
+  const deg = i * 24 + 6;
+  const [x, y] = polar(deg, i % 2 ? 58 : 76);
+  return { x, y, rot: deg };
+});
+const segments = Array.from({ length: 10 }, (_, i) => {
+  const [x1, y1] = polar(i * 36, 44);
+  const [x2, y2] = polar(i * 36, 112);
+  return { x1, y1, x2, y2 };
+});
+const pips = [36, 108, 180, 252, 324].map(deg => {
+  const [x, y] = polar(deg, 62);
+  return { x, y, rot: deg };
+});
+// Tomato: five sepals around the stem.
+const sepals = [-54, 18, 90, 162, 234];
+
+// Their icons are drawn by the script from the dial itself, so they match.
+const FRUITS = ["tomato", "orange", "apple", "watermelon"];
 ---
 
-<div class="ft" data-mode="focus" data-state="idle">
+<div class="ft" data-mode="focus" data-state="idle" data-fruit="tomato">
   <div class="ft-glow" data-ft="glow-focus" aria-hidden="true"></div>
   <div class="ft-glow ft-glow-break" data-ft="glow-break" aria-hidden="true">
   </div>
 
   <p class="ft-toast" data-ft="toast" role="status" aria-live="polite"></p>
+
+  <!-- Next to the back link, so the right-hand pills keep their width and
+       the top-center message has room. -->
+  <div class="ft-top ft-top-left">
+    <button
+      type="button"
+      class="ft-pill ft-fruit-pill"
+      data-ft="fruit-btn"
+      aria-expanded="false"
+      aria-controls="ft-fruit-panel"
+      aria-label="Fruit: tomato"
+    >
+      <span class="ft-fruit-art" data-ft="fruit-icon" aria-hidden="true"></span>
+    </button>
+  </div>
 
   <div class="ft-top">
     <button
@@ -70,6 +113,26 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     <button type="button" class="ft-pill" data-ft="sound" aria-pressed="false">
       sound: off
     </button>
+  </div>
+
+  <div
+    class="ft-panel ft-fruit-panel"
+    id="ft-fruit-panel"
+    data-ft="fruit-panel"
+    data-open="false"
+    role="dialog"
+    aria-label="Choose a fruit"
+  >
+    <div class="ft-fruit-grid" role="group" aria-label="Fruit">
+      {
+        FRUITS.map(f => (
+          <button type="button" data-ft-fruit={f} aria-pressed="false">
+            <span class="ft-fruit-art" aria-hidden="true" />
+            <span>{f}</span>
+          </button>
+        ))
+      }
+    </div>
   </div>
 
   <div
@@ -178,22 +241,136 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     <div class="ft-dial" data-ft="dial">
       <svg viewBox="-200 -200 400 400" aria-hidden="true">
         <defs>
-          <radialGradient id="ft-face" cx="50%" cy="38%" r="70%">
-            <stop offset="0" stop-color="#1f1f23"></stop>
-            <stop offset="1" stop-color="#121214"></stop>
-          </radialGradient>
-          <radialGradient id="ft-wedge" cx="50%" cy="50%" r="50%">
-            <stop offset="0.2" stop-color="var(--ft-hot)"></stop>
-            <stop offset="1" stop-color="var(--ft-color)"></stop>
-          </radialGradient>
-          <radialGradient id="ft-hub" cx="40%" cy="30%" r="80%">
-            <stop offset="0" stop-color="#3a3a40"></stop>
-            <stop offset="1" stop-color="#1a1a1d"></stop>
-          </radialGradient>
+          <clipPath id="ft-body-clip">
+            <circle r={BODY_R}></circle>
+          </clipPath>
+          <clipPath id="ft-wedge-clip">
+            <use href="#ft-wedge-path"></use>
+          </clipPath>
         </defs>
-        <circle class="ft-rim" r="196"></circle>
-        <circle r="190" fill="url(#ft-face)"></circle>
-        <path class="ft-wedge" data-ft="wedge" fill="url(#ft-wedge)"></path>
+
+        <!-- Stem and leaves sit behind the body, so their bases tuck in. -->
+        <g data-fruit-only="tomato">
+          {
+            sepals.map(a => (
+              <ellipse
+                class="ft-leaf"
+                cx="0"
+                cy="-27"
+                rx="14"
+                ry="27"
+                transform={`translate(0 ${-BODY_R + 6}) rotate(${a + 90})`}
+              />
+            ))
+          }
+          <rect
+            class="ft-stem"
+            x="-6"
+            y={-BODY_R - 38}
+            width="12"
+            height="30"
+            rx="6"></rect>
+        </g>
+        <g data-fruit-only="orange">
+          <rect
+            class="ft-stem"
+            x="-5"
+            y={-BODY_R - 16}
+            width="10"
+            height="24"
+            rx="5"></rect>
+          <ellipse
+            class="ft-leaf"
+            cx="26"
+            cy={-BODY_R - 16}
+            rx="26"
+            ry="12"
+            transform={`rotate(-18 4 ${-BODY_R - 8})`}></ellipse>
+        </g>
+        <g data-fruit-only="apple">
+          <path
+            class="ft-stem ft-stem-line"
+            d={`M0 ${-BODY_R + 14} q 1 -26 12 -44`}></path>
+          <ellipse
+            class="ft-leaf"
+            cx="38"
+            cy={-BODY_R - 22}
+            rx="26"
+            ry="12"
+            transform={`rotate(-24 14 ${-BODY_R - 18})`}></ellipse>
+        </g>
+        <g data-fruit-only="watermelon">
+          <path
+            class="ft-stem ft-stem-line"
+            d={`M0 ${-BODY_R + 6} q -2 -16 10 -20 q 10 -3 8 -12`}></path>
+        </g>
+
+        <circle class="ft-skin-shade" r={BODY_R} cy="9"></circle>
+        <circle class="ft-skin" r={BODY_R}></circle>
+        <g data-fruit-only="watermelon" clip-path="url(#ft-body-clip)">
+          {
+            stripes.map(s => (
+              <line class="ft-stripe" x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} />
+            ))
+          }
+        </g>
+        <g data-fruit-only="apple">
+          <ellipse class="ft-dimple" cx="0" cy={-BODY_R + 10} rx="20" ry="7"
+          ></ellipse>
+        </g>
+        <circle class="ft-rind" r={FACE_R + 9}></circle>
+        <circle class="ft-face-shade" r={FACE_R} cy="6"></circle>
+        <circle class="ft-face" r={FACE_R}></circle>
+        <path class="ft-wedge" id="ft-wedge-path" data-ft="wedge"></path>
+        <g data-fruit-only="watermelon" clip-path="url(#ft-wedge-clip)">
+          {
+            seeds.map(s => (
+              <ellipse
+                class="ft-seed"
+                rx="3.6"
+                ry="6"
+                transform={`translate(${s.x} ${s.y}) rotate(${s.rot})`}
+              />
+            ))
+          }
+        </g>
+        <g data-fruit-only="tomato" clip-path="url(#ft-wedge-clip)">
+          {
+            tomatoSeeds.map(s => (
+              <ellipse
+                class="ft-seed"
+                rx="2.8"
+                ry="4.6"
+                transform={`translate(${s.x} ${s.y}) rotate(${s.rot})`}
+              />
+            ))
+          }
+        </g>
+        <g data-fruit-only="orange" clip-path="url(#ft-wedge-clip)">
+          {
+            segments.map(s => (
+              <line
+                class="ft-segment"
+                x1={s.x1}
+                y1={s.y1}
+                x2={s.x2}
+                y2={s.y2}
+              />
+            ))
+          }
+        </g>
+        <g data-fruit-only="apple" clip-path="url(#ft-wedge-clip)">
+          {
+            pips.map(s => (
+              <ellipse
+                class="ft-seed"
+                rx="4.5"
+                ry="9"
+                transform={`translate(${s.x} ${s.y}) rotate(${s.rot})`}
+              />
+            ))
+          }
+        </g>
         {
           ticks.map(t => (
             <line
@@ -212,9 +389,9 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
             </text>
           ))
         }
-        <line class="ft-hand" data-ft="hand" x1="0" y1="0" x2="0" y2="-132"
+        <line class="ft-hand" data-ft="hand" x1="0" y1="0" x2="0" y2="-86"
         ></line>
-        <circle r="52" fill="url(#ft-hub)" class="ft-hub-disc"></circle>
+        <circle r="42" class="ft-hub-disc"></circle>
       </svg>
       <button type="button" class="ft-hub" data-ft="hub" aria-label="Start">
         <span class="ft-time" data-ft="time" role="timer">25:00</span>
@@ -264,8 +441,6 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     <span class="ft-dots" data-ft="dots"></span>
     <span data-ft="total"></span>
   </div>
-
-  <p class="ft-hint">name it · twist the dial · tap to pause</p>
 </div>
 
 <script>
@@ -277,18 +452,46 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
 </script>
 
 <style is:global>
+  /* Flat, like the Lab thumbnail, on the site's own background, light or
+     dark. Each fruit sets its own skin, face and wedge; --ft-focus is its
+     accent for the rest of the UI. */
   .ft {
-    --ft-bg: #0b0b0d;
-    --ft-ink: #ece8e1;
-    --ft-dim: rgb(236 232 225 / 0.45);
-    --ft-faint: rgb(236 232 225 / 0.18);
-    --ft-color: #e8542e;
-    --ft-hot: #ff9a5c;
+    --ft-bg: var(--background);
+    --ft-ink-rgb: 40 39 40;
+    --ft-ink: rgb(var(--ft-ink-rgb));
+    --ft-dim: rgb(var(--ft-ink-rgb) / 0.58);
+    --ft-faint: rgb(var(--ft-ink-rgb) / 0.16);
+    --ft-surface: rgb(255 255 255 / 0.96);
+    --ft-shadow-rgb: 60 40 20;
+    --ft-scheme: light;
+    --ft-break: #2e9a6c;
+    --ft-color: var(--ft-focus);
+    --ft-hot: var(--ft-color);
+    --ft-wedge: var(--fruit-wedge);
     --ft-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+
+    /* tomato */
+    --ft-focus: #d8432f;
+    --fruit-skin: #e0503c;
+    --fruit-shade: #b03a2b;
+    --fruit-rind: transparent;
+    --fruit-face: #ffffff;
+    --fruit-face-shade: #c23f2f;
+    --fruit-wedge: #f2a33a;
+    /* During a break the flesh fades to a pale version of itself (the
+       timeline keeps green for its break blocks). */
+    --fruit-rest: #e8c392;
+    --fruit-seed: #fff1c2;
+    --fruit-leaf: #2e9a6c;
+    --fruit-stem: #23774f;
+    /* Ticks and numerals sit on the light face in either theme. */
+    --fruit-ink: 40 39 40;
+
+    --ft-dial: min(84vw, 62svh, 540px);
 
     position: relative;
     display: grid;
-    min-height: 100svh;
+    height: 100svh;
     place-items: center;
     overflow: hidden;
     background: var(--ft-bg);
@@ -297,9 +500,83 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     user-select: none;
     -webkit-tap-highlight-color: transparent;
   }
+  [data-theme="dark"] .ft {
+    --ft-ink-rgb: 234 237 243;
+    --ft-surface: rgb(44 52 72 / 0.97);
+    --ft-shadow-rgb: 0 0 0;
+    --ft-scheme: dark;
+  }
+  /* The page is exactly one screen and never scrolls. */
+  html:has(.ft) {
+    overflow: hidden;
+  }
+  .ft[data-fruit="orange"] {
+    --ft-focus: #e0701a;
+    --fruit-skin: #ec7a1c;
+    --fruit-shade: #c45f0e;
+    --fruit-rind: #ffe3b3;
+    --fruit-face: #fffaf0;
+    --fruit-face-shade: #f0c27a;
+    /* Juicy yellow-orange flesh, split by white pith. */
+    --fruit-wedge: #ffbe2e;
+    --fruit-rest: #f0c09a;
+    --fruit-seed: #fffaf0;
+    --fruit-leaf: #2e9a6c;
+    --fruit-stem: #6b4226;
+  }
+  .ft[data-fruit="apple"] {
+    --ft-focus: #c92f37;
+    --fruit-skin: #d9363e;
+    --fruit-shade: #a8262d;
+    --fruit-rind: #fff1cf;
+    --fruit-face: #fffbef;
+    --fruit-face-shade: #e9d4a4;
+    /* Golden flesh with brown pips, not the red of the skin. */
+    --fruit-wedge: #f2b134;
+    --fruit-rest: #e6cf98;
+    --fruit-seed: #5b3416;
+    --fruit-leaf: #2e9a6c;
+    --fruit-stem: #6b4226;
+  }
+  .ft[data-fruit="watermelon"] {
+    --ft-focus: #e0434f;
+    --ft-break: #1f8a5e;
+    --fruit-skin: #2e9a6c;
+    --fruit-shade: #1f6e4d;
+    --fruit-rind: #dff1c6;
+    --fruit-face: #ffe4e1;
+    --fruit-face-shade: #b9dca0;
+    --fruit-wedge: #ef4b5a;
+    --fruit-rest: #e8a0a4;
+    --fruit-seed: #2a1c18;
+    --fruit-leaf: #2e9a6c;
+    --fruit-stem: #6b4226;
+  }
   .ft[data-mode="break"] {
-    --ft-color: #1e9e8f;
-    --ft-hot: #7fe0c9;
+    --ft-color: var(--fruit-rest);
+    --ft-wedge: var(--fruit-rest);
+  }
+  /* Parts that belong to one fruit only. */
+  .ft [data-fruit-only] {
+    display: none;
+  }
+  .ft[data-fruit="tomato"] [data-fruit-only="tomato"],
+  .ft[data-fruit="orange"] [data-fruit-only="orange"],
+  .ft[data-fruit="apple"] [data-fruit-only="apple"],
+  .ft[data-fruit="watermelon"] [data-fruit-only="watermelon"] {
+    display: inline;
+  }
+  /* The back link sits outside .ft, so it uses the site's tokens. */
+  .lab-full:has(.ft) .lab-back {
+    color: color-mix(in srgb, var(--foreground) 58%, transparent);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .lab-full:has(.ft) .lab-back:hover {
+      color: var(--foreground);
+    }
+  }
+  .lab-full:has(.ft) .lab-back:focus-visible {
+    color: var(--foreground);
   }
 
   /* Light behind the dial; dims as the session runs out. One layer per
@@ -309,7 +586,7 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     inset: 0;
     background: radial-gradient(
       circle at 50% 42%,
-      rgb(232 84 46 / 0.32) 0,
+      color-mix(in srgb, var(--ft-focus) 32%, transparent) 0,
       transparent 55%
     );
     opacity: 0;
@@ -320,7 +597,7 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
   .ft-glow-break {
     background: radial-gradient(
       circle at 50% 42%,
-      rgb(30 158 143 / 0.32) 0,
+      color-mix(in srgb, var(--fruit-rest) 40%, transparent) 0,
       transparent 55%
     );
   }
@@ -350,6 +627,74 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
       color 150ms ease,
       border-color 150ms ease;
   }
+  .ft-top.ft-top-left {
+    right: auto;
+    left: 5rem;
+  }
+  .ft-fruit-pill {
+    display: grid;
+    place-items: center;
+    padding: 0.2rem 0.5rem;
+  }
+  /* Copies of the dial's fruit (drawn by the script), 360 x 394. */
+  .ft-fruit-art {
+    display: block;
+    width: 1.15rem;
+    aspect-ratio: 360 / 394;
+  }
+  .ft-fruit-art svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+
+  /* Fruit picker: a row of four, each a little fruit with its name. */
+  .ft-panel.ft-fruit-panel {
+    right: auto;
+    left: 1rem;
+    width: min(20rem, calc(100vw - 2rem));
+  }
+  .ft-fruit-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.35rem;
+  }
+  .ft-fruit-grid button {
+    display: grid;
+    justify-items: center;
+    gap: 0.3rem;
+    padding: 0.55rem 0.2rem 0.45rem;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    color: var(--ft-dim);
+    font-size: 0.72rem;
+    transition:
+      color 150ms ease,
+      border-color 150ms ease,
+      background-color 150ms ease,
+      transform 140ms var(--ft-ease-out);
+  }
+  .ft-fruit-grid .ft-fruit-art {
+    width: 1.9rem;
+  }
+  .ft-fruit-grid button[aria-pressed="true"] {
+    border-color: var(--ft-faint);
+    background: rgb(var(--ft-ink-rgb) / 0.05);
+    color: var(--ft-ink);
+  }
+  .ft-fruit-grid button[data-pressed] {
+    transform: scale(0.97);
+  }
+  .ft-fruit-grid button:focus-visible {
+    outline: 2px solid var(--ft-dim);
+    outline-offset: 2px;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .ft-fruit-grid button:hover {
+      color: var(--ft-ink);
+    }
+  }
 
   /* Settings panel: anchored under its pill, so it grows from that corner. */
   .ft-panel {
@@ -363,8 +708,8 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     padding: 0.9rem 1rem;
     border: 1px solid var(--ft-faint);
     border-radius: 12px;
-    background: rgb(20 20 23 / 0.92);
-    box-shadow: 0 18px 40px rgb(0 0 0 / 0.5);
+    background: var(--ft-surface);
+    box-shadow: 0 18px 40px rgb(var(--ft-shadow-rgb) / 0.14);
     font-size: 0.8rem;
     opacity: 0;
     transform: scale(0.96);
@@ -416,7 +761,7 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     outline: none;
   }
   .ft-panel small {
-    color: rgb(236 232 225 / 0.3);
+    color: rgb(var(--ft-ink-rgb) / 0.3);
     font-size: 0.75rem;
   }
   .ft-panel-actions {
@@ -449,7 +794,7 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     display: grid;
     justify-items: center;
     gap: clamp(1.25rem, 3.5vh, 2.25rem);
-    padding: 4rem 1rem 6rem;
+    padding: 3.5rem 1rem 2.5rem;
   }
 
   .ft-tabs {
@@ -467,7 +812,7 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
       background-color 150ms ease;
   }
   .ft-tabs button[aria-pressed="true"] {
-    background: rgb(236 232 225 / 0.08);
+    background: rgb(var(--ft-ink-rgb) / 0.08);
     color: var(--ft-ink);
   }
   .ft-tabs button:focus-visible,
@@ -487,28 +832,21 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     width: 4px;
     height: 4px;
     border-radius: 50%;
-    background: rgb(236 232 225 / 0.2);
+    background: rgb(var(--ft-ink-rgb) / 0.2);
     transition: background-color 200ms ease;
   }
   .ft-cycle i.is-done {
-    background: #e8542e;
+    background: var(--ft-focus);
   }
 
   .ft-dial {
     position: relative;
-    width: min(78vw, 58svh, 460px);
+    width: var(--ft-dial);
     aspect-ratio: 1;
+    /* Room for the stem and leaves, which reach above the SVG box. */
+    margin-top: calc(var(--ft-dial) * 0.04);
     touch-action: none;
     cursor: grab;
-  }
-  /* Static shadow layer: drawn once, not re-blurred when the wedge changes. */
-  .ft-dial::before {
-    position: absolute;
-    inset: 1%;
-    border-radius: 50%;
-    box-shadow: 0 30px 60px rgb(0 0 0 / 0.6);
-    content: "";
-    pointer-events: none;
   }
   .ft-dial.is-dragging {
     cursor: grabbing;
@@ -519,40 +857,84 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     height: 100%;
     overflow: visible;
   }
-  .ft-rim {
-    fill: #1b1b1e;
-    stroke: rgb(255 255 255 / 0.06);
-    stroke-width: 1;
+  /* Fills change with the fruit; fade them so a switch reads as one move. */
+  .ft-skin,
+  .ft-skin-shade,
+  .ft-rind,
+  .ft-face,
+  .ft-face-shade,
+  .ft-wedge {
+    transition: fill 200ms ease;
+  }
+  .ft-skin {
+    fill: var(--fruit-skin);
+  }
+  .ft-skin-shade {
+    fill: var(--fruit-shade);
+  }
+  .ft-rind {
+    fill: var(--fruit-rind);
+  }
+  .ft-face {
+    fill: var(--fruit-face);
+  }
+  .ft-face-shade {
+    fill: var(--fruit-face-shade);
+  }
+  .ft-leaf {
+    fill: var(--fruit-leaf);
+  }
+  .ft-stem {
+    fill: var(--fruit-stem);
+  }
+  .ft-stem-line {
+    fill: none;
+    stroke: var(--fruit-stem);
+    stroke-width: 9;
+    stroke-linecap: round;
+  }
+  .ft-stripe {
+    stroke: var(--fruit-shade);
+    stroke-width: 15;
+    stroke-linecap: round;
+  }
+  .ft-dimple {
+    fill: var(--fruit-shade);
+    opacity: 0.55;
+  }
+  .ft-seed {
+    fill: var(--fruit-seed);
+  }
+  .ft-segment {
+    stroke: var(--fruit-seed);
+    stroke-width: 5;
+    stroke-linecap: round;
   }
   .ft-wedge {
-    filter: drop-shadow(
-      0 0 18px color-mix(in srgb, var(--ft-color) 60%, transparent)
-    );
+    fill: var(--ft-wedge);
   }
   .ft-tick {
-    stroke: rgb(236 232 225 / 0.22);
+    stroke: rgb(var(--fruit-ink) / 0.14);
     stroke-width: 1.5;
     stroke-linecap: round;
   }
   .ft-major {
-    stroke: rgb(236 232 225 / 0.6);
-    stroke-width: 2.5;
+    stroke: rgb(var(--fruit-ink) / 0.3);
+    stroke-width: 4;
   }
   .ft-num {
-    fill: rgb(236 232 225 / 0.55);
-    font-size: 13px;
+    fill: rgb(var(--fruit-ink) / 0.5);
+    font-size: 11px;
     text-anchor: middle;
     dominant-baseline: central;
   }
   .ft-hand {
-    stroke: var(--ft-ink);
-    stroke-width: 3;
+    stroke: #18181c;
+    stroke-width: 7;
     stroke-linecap: round;
-    opacity: 0.85;
   }
   .ft-hub-disc {
-    stroke: rgb(255 255 255 / 0.08);
-    stroke-width: 1;
+    fill: #18181c;
   }
 
   .ft-hub {
@@ -560,7 +942,8 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     top: 50%;
     left: 50%;
     display: grid;
-    width: 27%;
+    width: 21%;
+    color: #f7f4ee;
     aspect-ratio: 1;
     place-items: center;
     border-radius: 50%;
@@ -589,6 +972,8 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
   .ft-task {
     position: relative;
     display: block;
+    /* Up into the empty band under the fruit's round bottom. */
+    margin-top: calc(var(--ft-dial) * -0.06);
     cursor: text;
   }
   .ft-task::after {
@@ -597,7 +982,7 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     bottom: -0.45rem;
     left: 25%;
     height: 1px;
-    background: rgb(236 232 225 / 0.22);
+    background: rgb(var(--ft-ink-rgb) / 0.22);
     content: "";
     transform: scaleX(0.7);
     transition:
@@ -607,10 +992,6 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
   }
   .ft-task:focus-within::after {
     background: var(--ft-color);
-    transform: scaleX(1);
-  }
-  .ft.needs-task .ft-task::after {
-    background: var(--ft-hot);
     transform: scaleX(1);
   }
   /* While a session runs the line reads as a title; the writing line comes
@@ -658,7 +1039,7 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     background: transparent;
     color: var(--ft-ink);
     font-family: "Iowan Old Style", "New York", ui-serif, Georgia, serif;
-    font-size: clamp(1.4rem, 4.2vw, 2.1rem);
+    font-size: clamp(1.15rem, 3.2vw, 1.6rem);
     font-style: italic;
     text-align: center;
     caret-color: var(--ft-color);
@@ -666,14 +1047,11 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     outline: none;
   }
   .ft-task input::placeholder {
-    color: rgb(236 232 225 / 0.4);
+    color: rgb(var(--ft-ink-rgb) / 0.4);
     transition: color 200ms ease;
   }
   .ft-task input:focus::placeholder {
-    color: rgb(236 232 225 / 0.3);
-  }
-  .ft.needs-task .ft-task input::placeholder {
-    color: var(--ft-hot);
+    color: rgb(var(--ft-ink-rgb) / 0.3);
   }
 
   .ft-today {
@@ -696,26 +1074,7 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: #e8542e;
-  }
-
-  .ft-hint {
-    position: absolute;
-    right: 1rem;
-    bottom: 1.1rem;
-    left: 1rem;
-    color: rgb(236 232 225 / 0.35);
-    font-size: 0.75rem;
-    text-align: center;
-    pointer-events: none;
-  }
-  .ft-today:not([hidden]) ~ .ft-hint {
-    bottom: 2.6rem;
-  }
-  @media (min-width: 720px) {
-    .ft-today:not([hidden]) ~ .ft-hint {
-      bottom: 1.1rem;
-    }
+    background: var(--ft-focus);
   }
 
   /* ---- Gentle note ---------------------------------------------------- */
@@ -728,8 +1087,8 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     padding: 0.5rem 1rem;
     border: 1px solid var(--ft-faint);
     border-radius: 999px;
-    background: rgb(24 24 27 / 0.92);
-    box-shadow: 0 10px 30px rgb(0 0 0 / 0.35);
+    background: var(--ft-surface);
+    box-shadow: 0 10px 30px rgb(var(--ft-shadow-rgb) / 0.12);
     color: var(--ft-ink);
     font-size: 0.8rem;
     white-space: nowrap;
@@ -749,10 +1108,26 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
       opacity 260ms var(--ft-ease-out),
       transform 260ms var(--ft-ease-out);
   }
-  @media (max-width: 560px) {
-    /* Below the corner pills on narrow screens. */
+  /* Below the corner pills wherever the two would meet. */
+  @media (max-width: 1100px) {
     .ft-toast {
       top: 3.3rem;
+    }
+  }
+  @media (max-width: 560px) {
+    /* The back link and four pills fill a phone's top edge, so the fruit
+       button moves to the bottom-right corner and its picker opens up. */
+    .ft-top.ft-top-left {
+      top: auto;
+      right: 0.75rem;
+      bottom: 0.6rem;
+      left: auto;
+    }
+    .ft-panel.ft-fruit-panel {
+      top: auto;
+      right: 0.75rem;
+      bottom: 3rem;
+      left: auto;
     }
     /* Four pills plus the back link have to share a phone's width. */
     .ft-top {
@@ -790,7 +1165,7 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
   }
   .ft-plan-until input {
     width: auto;
-    color-scheme: dark;
+    color-scheme: var(--ft-scheme);
     text-align: left;
   }
   .ft-plan-quick {
@@ -819,7 +1194,7 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     margin-left: auto;
     padding: 0.3rem 0.9rem;
     border-radius: 999px;
-    background: #e8542e;
+    background: var(--ft-focus);
     color: #fff;
     text-decoration: none;
     transition:
@@ -841,15 +1216,21 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
   }
   .ft-check input {
     width: auto;
-    accent-color: #e8542e;
+    accent-color: var(--ft-focus);
   }
 
   /* ---- Timeline strip ------------------------------------------------- */
-  .ft.has-plan .ft-hint {
+  /* No recent-task chips during a plan; don't hold their row open. */
+  .ft.has-plan .ft-recent {
     display: none;
   }
+  /* Full size whenever it fits; only on a short screen with the plan's
+     timeline showing does the dial give up height so nothing overlaps. */
+  .ft.has-plan {
+    --ft-dial: min(84vw, 62svh, 540px, calc(100svh - 17.5rem));
+  }
   .ft.has-plan .ft-stage {
-    padding-bottom: 8.5rem;
+    padding-bottom: 7rem;
   }
   .ft-strip {
     position: absolute;
@@ -876,7 +1257,7 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
   .ft-replan {
     color: var(--ft-hot);
     text-decoration: underline;
-    text-decoration-color: rgb(255 154 92 / 0.4);
+    text-decoration-color: color-mix(in srgb, var(--ft-color) 40%, transparent);
     text-underline-offset: 3px;
   }
   .ft-track {
@@ -903,22 +1284,22 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
       background-color 300ms ease;
   }
   .ft-block-focus {
-    background: rgb(232 84 46 / 0.28);
+    background: color-mix(in srgb, var(--ft-focus) 28%, transparent);
     cursor: pointer;
   }
   .ft-block-short,
   .ft-block-long {
-    background: rgb(30 158 143 / 0.28);
+    background: color-mix(in srgb, var(--ft-break) 28%, transparent);
   }
   .ft-block-wrap {
-    background: rgb(236 232 225 / 0.1);
+    background: rgb(var(--ft-ink-rgb) / 0.1);
   }
   .ft-block.is-current.ft-block-focus {
-    background: rgb(232 84 46 / 0.55);
+    background: color-mix(in srgb, var(--ft-focus) 55%, transparent);
   }
   .ft-block.is-current.ft-block-short,
   .ft-block.is-current.ft-block-long {
-    background: rgb(30 158 143 / 0.55);
+    background: color-mix(in srgb, var(--ft-break) 55%, transparent);
   }
   .ft-block.is-past {
     opacity: 0.35;
@@ -928,7 +1309,7 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     outline-offset: 1px;
   }
   .ft-block-focus:empty::before {
-    color: rgb(236 232 225 / 0.45);
+    color: rgb(var(--ft-ink-rgb) / 0.45);
     content: "+ label";
   }
   .ft-now {
@@ -944,7 +1325,7 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     width: 2px;
     border-radius: 1px;
     background: var(--ft-ink);
-    box-shadow: 0 0 6px rgb(236 232 225 / 0.6);
+    box-shadow: 0 0 6px rgb(var(--ft-ink-rgb) / 0.6);
   }
   .ft-label-editor {
     position: absolute;
@@ -956,8 +1337,8 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     padding: 0.4rem 0.6rem;
     border: 1px solid var(--ft-faint);
     border-radius: 10px;
-    background: rgb(20 20 23 / 0.95);
-    box-shadow: 0 10px 30px rgb(0 0 0 / 0.45);
+    background: var(--ft-surface);
+    box-shadow: 0 10px 30px rgb(var(--ft-shadow-rgb) / 0.14);
     color: var(--ft-dim);
     transform: translateX(-50%);
     /* A popover for its block: grows up out of it. */
@@ -982,7 +1363,7 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     user-select: text;
   }
   .ft-label-editor input:focus {
-    border-bottom-color: #e8542e;
+    border-bottom-color: var(--ft-focus);
   }
 
   @media (hover: hover) and (pointer: fine) {
@@ -997,10 +1378,10 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
       opacity: 1;
     }
     .ft-task:hover input::placeholder {
-      color: rgb(236 232 225 / 0.6);
+      color: rgb(var(--ft-ink-rgb) / 0.6);
     }
     .ft-task:hover:not(:focus-within)::after {
-      background: rgb(236 232 225 / 0.4);
+      background: rgb(var(--ft-ink-rgb) / 0.4);
       transform: scaleX(1);
     }
     .ft-tabs button:not([aria-pressed="true"]):hover {
@@ -1028,6 +1409,7 @@ const numerals = Array.from({ length: 12 }, (_, i) => {
     }
     .ft-recent button[data-pressed],
     .ft-plan-quick button[data-pressed],
+    .ft-fruit-grid button[data-pressed],
     .ft-panel-actions .ft-plan-go[data-pressed] {
       transform: none;
     }
