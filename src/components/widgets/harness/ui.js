@@ -3,7 +3,7 @@
 // time. The player runs one, reads the trace, connects the part that
 // appears, and runs it again. Progress lives in localStorage under one key.
 
-import { TASKS, runTask, rawMessages } from "./agent.js";
+import { TASKS, runTask, rawMessages, diagnose, tested } from "./agent.js";
 import { BRANCHES, PARTS, ORDER } from "./world.js";
 import { modelManager, REAL as MODEL } from "./llm.js";
 import { icon } from "./icons.js";
@@ -339,7 +339,6 @@ export function mountHarness(root) {
 
   function draw() {
     const T = task();
-    notesBtn.dataset.count = noted().length || "";
     prevBtn.disabled = state.at === 0;
     nextBtn.disabled = state.at >= state.top;
     [...pips.children].forEach((b, i) => {
@@ -540,16 +539,26 @@ export function mountHarness(root) {
     note(`${PARTS[id].name}${isOn(id) ? "" : ", off"}. ${PARTS[id].short}`);
   }
 
-  // What to change: the first part of the known solution that isn't on. A
-  // part the task introduces arrives on the map here, switched off.
-  function point() {
-    const id = task().sol.find(x => !isOn(x));
-    if (!id) return "";
+  const names = ids => {
+    const n = ids.map(id => PARTS[id].name);
+    return n.length > 1
+      ? `${n.slice(0, -1).join(", ")} and ${n.at(-1)}`
+      : n[0] || "";
+  };
+  // Point at one part and say what to do with it. A part this task
+  // introduces arrives on the map here, switched off.
+  function suggest(id, turn = "on") {
     const name = PARTS[id].name;
+    if (turn === "off") {
+      elOf(id)?.classList.add("ah-hinted");
+      return `Switch ${name} off for this level.`;
+    }
     if (owns(id)) {
       elOf(id)?.classList.add("ah-hinted");
       return `${name} is switched off. Tap it to connect it.`;
     }
+    if (id !== task().gives)
+      return `The part for that, ${name}, arrives at level ${TASKS.findIndex(T => T.gives === id) + 1}.`;
     state.owned.push(id);
     blip(660, 0.09);
     setTimeout(() => blip(880, 0.12), 90);
@@ -558,9 +567,98 @@ export function mountHarness(root) {
     elOf(id)?.classList.add("ah-new", "ah-hinted");
     return `A new part can fix this: ${name}. Tap it to connect it.`;
   }
+  // Before a run: the first part of the known solution that isn't on.
+  function point() {
+    const id = task().sol.find(x => !isOn(x));
+    return id ? suggest(id) : "";
+  }
+  // After a failed run: what went wrong, and the change that addresses it.
+  function explain(d) {
+    if (d.part) return `Failed: ${d.what} ${suggest(d.part, d.turn)}`;
+    const off = d.missing.filter(owns);
+    if (!off.length && !d.extra.length)
+      return `Failed: ${d.what} This is the harness the level is tested with, so the slip is the model's own. The trace shows where.`;
+    for (const id of [...off, ...d.extra]) elOf(id)?.classList.add("ah-hinted");
+    const diff = [
+      off.length && `${names(off)} off`,
+      d.extra.length && `${names(d.extra)} on`,
+    ].filter(Boolean);
+    return `Failed: ${d.what} This level is tested with ${names(tested(task()))}; you have ${diff.join(" and ")}.`;
+  }
+
+  // Several parts at once: on if any of them is off, otherwise off.
+  function toggleMany(ids) {
+    if (!ids.length) return;
+    const on = ids.some(id => !isOn(id));
+    const set = wired().filter(id => !ids.includes(id));
+    state.on[task().id] = on ? [...set, ...ids] : set;
+    blip(on ? 520 : 400, 0.05, "triangle");
+    save();
+    draw();
+    note(`${on ? "Connected" : "Disconnected"} ${names(ids)}.`);
+  }
+  // Drag a window over the board to pick the parts under it. Mouse and pen
+  // only: a finger dragging here scrolls the page.
+  let drag = null;
+  const touched = box =>
+    [...map.querySelectorAll("[data-part]")].filter(e => {
+      const r = e.getBoundingClientRect();
+      return (
+        r.left < box.right &&
+        r.right > box.left &&
+        r.top < box.bottom &&
+        r.bottom > box.top
+      );
+    });
+  map.addEventListener("pointerdown", ev => {
+    if (state.running || ev.pointerType === "touch" || ev.button !== 0) return;
+    drag = { x: ev.clientX, y: ev.clientY, id: ev.pointerId, el: null };
+  });
+  map.addEventListener("pointermove", ev => {
+    if (!drag || ev.pointerId !== drag.id) return;
+    const dx = ev.clientX - drag.x;
+    const dy = ev.clientY - drag.y;
+    if (!drag.el) {
+      if (Math.hypot(dx, dy) < 6) return;
+      drag.el = h("div", "ah-marquee");
+      map.append(drag.el);
+      map.setPointerCapture(drag.id);
+    }
+    const m = map.getBoundingClientRect();
+    const box = {
+      left: Math.min(drag.x, ev.clientX),
+      top: Math.min(drag.y, ev.clientY),
+      right: Math.max(drag.x, ev.clientX),
+      bottom: Math.max(drag.y, ev.clientY),
+    };
+    Object.assign(drag.el.style, {
+      left: `${box.left - m.left}px`,
+      top: `${box.top - m.top}px`,
+      width: `${box.right - box.left}px`,
+      height: `${box.bottom - box.top}px`,
+    });
+    const hit = touched(box);
+    for (const e of map.querySelectorAll("[data-part]"))
+      e.classList.toggle("ah-lit", hit.includes(e));
+    drag.hit = hit.map(e => e.dataset.part);
+  });
+  const drop = ev => {
+    if (!drag || ev.pointerId !== drag.id) return;
+    const { el, hit = [] } = drag;
+    drag = null;
+    if (!el) return;
+    el.remove();
+    // the click that ends a drag is not a tap on a part
+    state.dragged = true;
+    setTimeout(() => (state.dragged = false));
+    if (ev.type === "pointerup") toggleMany(hit);
+    else draw();
+  };
+  map.addEventListener("pointerup", drop);
+  map.addEventListener("pointercancel", drop);
 
   map.addEventListener("click", ev => {
-    if (state.running) return;
+    if (state.running || state.dragged) return;
     const p = ev.target.closest("[data-part]");
     if (p) toggle(p.dataset.part);
   });
@@ -763,12 +861,7 @@ export function mountHarness(root) {
     } else {
       botEl.dataset.face = "sad";
       blip(160, 0.2, "sawtooth", 0.04);
-      const miss = res.evals.find(e => !e.ok).miss;
-      const fix = point();
-      note(
-        `Failed: ${miss} ${fix || (model.real ? "The harness is right; this small model still slipped. Read the trace, or move on." : "")}`,
-        true
-      );
+      note(explain(diagnose(T, parts, res)), true);
     }
   }
 
@@ -880,15 +973,14 @@ export function mountHarness(root) {
     }
     if (!first) return;
     // the note flies to the Field notes button, and its counter goes up
-    const count = noted().length;
     const land = () => {
-      notesBtn.dataset.count = count;
       notesBtn.classList.remove("ah-bump");
       void notesBtn.offsetWidth;
       notesBtn.classList.add("ah-bump");
+      clearTimeout(state.bump);
+      state.bump = setTimeout(() => notesBtn.classList.remove("ah-bump"), 2300);
     };
     if (reduced()) return land();
-    notesBtn.dataset.count = count - 1 || "";
     const from = s.querySelector(".ah-added").getBoundingClientRect();
     const to = notesBtn.getBoundingClientRect();
     const fly = h("div", `ah-fly ah-c-${P.branch}`, icon(id));

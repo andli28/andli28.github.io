@@ -1,7 +1,7 @@
 // Run with: node --test src/components/widgets/harness/agent.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseReply, rawMessages, runTask, TASKS } from "./agent.js";
+import { diagnose, parseReply, rawMessages, runTask, TASKS } from "./agent.js";
 import { standIn } from "./llm.js";
 
 test("reads the harness's own call format", () => {
@@ -206,4 +206,42 @@ test("the check throws an unchecked answer away", async () => {
 test("every eval says what went wrong when it fails", () => {
   for (const T of TASKS)
     for (const e of T.evals) assert.match(e.miss, /^[a-z].*\.$/, e.label);
+});
+
+test("a failed run is explained by a part, and the fixes lead to a pass", async () => {
+  const model = standIn();
+  const all = TASKS.map(t => t.gives);
+  let seed = 7;
+  const rnd = () =>
+    (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  for (const T of TASKS)
+    for (let k = 0; k < 60; k++) {
+      let parts = all.filter(() => rnd() < 0.5);
+      const start = `${T.id}: ${parts.join("+")}`;
+      let r = await runTask(T, parts, model);
+      for (let step = 0; !r.pass; step++) {
+        assert.ok(step < 16, `${start} never passes`);
+        const d = diagnose(T, parts, r);
+        assert.ok(d.part, `${start} has no cause: ${d.what}`);
+        parts =
+          d.turn === "on"
+            ? [...parts, d.part]
+            : parts.filter(p => p !== d.part);
+        r = await runTask(T, parts, model);
+      }
+    }
+});
+
+test("with the tested harness, a failure is put down to the model", async () => {
+  const sum = TASKS.find(t => t.id === "sum");
+  const parts = ["tools", "feedback", "prompt", "check"];
+  // reads the file, then gives the wrong port anyway
+  const r = await runTask(
+    sum,
+    parts,
+    calls("read_file", { path: "config.json" })
+  );
+  const d = diagnose(sum, parts, r);
+  assert.equal(d.part, undefined);
+  assert.deepEqual([d.missing, d.extra], [[], []]);
 });
