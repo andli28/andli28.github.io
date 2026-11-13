@@ -1210,11 +1210,18 @@ export function mountHarness(root) {
     }
   }
 
-  let rz;
-  window.addEventListener("resize", () => {
-    clearTimeout(rz);
-    rz = setTimeout(drawWires, 120);
+  // The wires are drawn from measured positions, so redraw them whenever the
+  // board or one of its sections changes size: a window resize, a scrollbar
+  // coming or going, a line of text above the board wrapping.
+  let rz = 0;
+  const watch = new ResizeObserver(() => {
+    rz ||= requestAnimationFrame(() => {
+      rz = 0;
+      drawWires();
+    });
   });
+  watch.observe(map);
+  for (const el of map.querySelectorAll(".ah-branch")) watch.observe(el);
 
   draw();
   idleTrace();

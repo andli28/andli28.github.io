@@ -1564,9 +1564,10 @@
     /* the page is one screen tall when the board fits, and grows with the
        board when it doesn't; the trace never makes it taller */
     .ah-side {
-      max-height: calc(100svh - 150px);
-      position: sticky;
-      top: 10px;
+      /* its content has no say in the row's height: the row is as tall as
+         the board or the space left on screen, and the trace scrolls inside */
+      contain: size;
+      overflow: hidden;
     }
     .ah-board {
       flex: 1;
@@ -1576,6 +1577,7 @@
       grid-template-columns: 1fr minmax(214px, 0.7fr) 1fr;
     }
     .ah-trace {
+      min-height: 0;
       max-height: none;
     }
     .ah-map {
