@@ -926,6 +926,7 @@ export async function runTask(task, parts, model, io = {}) {
       let by = "tools";
       if (tool === "load_tool" && h.skills) {
         out = box[args.name]?.desc || `no such tool: ${args.name}`;
+        if (!box[args.name]) r.manual++;
         loaded.add(args.name);
         by = "skills";
       } else if (h.skills && box[tool] && !loaded.has(tool)) {
@@ -1052,6 +1053,23 @@ export function diagnose(task, parts, r) {
       "the model had no tools, so all it could do was guess.",
       "tools"
     );
+  // the model tripped over the manuals on a level that doesn't need them
+  if (h.skills && r.manual && !task.big)
+    return fix(
+      "with Skills on, a tool can't be used until its manual has been opened, and that extra step is where the model went wrong.",
+      "skills",
+      "off"
+    );
+  if (
+    h.notes &&
+    !tested(task).includes("notes") &&
+    called(r, "read_file", /notes\.md/)
+  )
+    return fix(
+      "Notes file told it about notes.md, so it went looking there, and there is nothing in it yet.",
+      "notes",
+      "off"
+    );
   if (r.crashed && /^Model error/.test(end))
     return {
       what: "the model itself stopped working mid-run.",
@@ -1099,12 +1117,6 @@ export function diagnose(task, parts, r) {
       );
   }
   if (!r.done && r.turns >= CAP) {
-    if (r.manual && h.skills && !task.big)
-      return fix(
-        "with Skills on, a tool's manual must be opened before the tool is used, and it never opened one.",
-        "skills",
-        "off"
-      );
     if (r.repeats > 2 && !h.stop)
       return fix(
         `it made the same call ${r.repeats} times in a row and nothing noticed.`,
