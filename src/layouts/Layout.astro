@@ -110,6 +110,39 @@ const rssHref = getAssetPath("rss.xml");
       })();
     </script>
 
+    <!--
+      GoatCounter view tracking (private dashboard, no cookies).
+      ClientRouter swaps pages without a full reload, so count.js's own
+      on-load count would only see the first page. Instead we turn that off
+      (no_onload) and count on every astro:page-load, which fires for the
+      first load and for each client-side navigation. count.js skips
+      localhost on its own, so dev sessions aren't counted.
+    -->
+    <script
+      is:inline
+      id="goatcounter"
+      data-goatcounter="https://andli28.goatcounter.com/count"
+      data-goatcounter-settings='{"no_onload": true}'
+      async
+      src="https://gc.zgo.at/count.js"></script>
+    <script is:inline>
+      (function () {
+        if (window.__gcListening) return;
+        window.__gcListening = true;
+        function count() {
+          if (window.goatcounter && window.goatcounter.count) {
+            window.goatcounter.count();
+          } else {
+            const el = document.getElementById("goatcounter");
+            el?.addEventListener("load", () => window.goatcounter?.count?.(), {
+              once: true,
+            });
+          }
+        }
+        document.addEventListener("astro:page-load", count);
+      })();
+    </script>
+
     <ClientRouter />
   </head>
   <body
