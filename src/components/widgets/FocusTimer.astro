@@ -85,6 +85,15 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
     <button
       type="button"
       class="ft-pill"
+      data-ft="tasks-btn"
+      aria-expanded="false"
+      aria-controls="ft-tasks-panel"
+    >
+      tasks
+    </button>
+    <button
+      type="button"
+      class="ft-pill"
       data-ft="plan-btn"
       aria-expanded="false"
       aria-controls="ft-plan-panel"
@@ -133,6 +142,24 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
         ))
       }
     </div>
+  </div>
+
+  <div
+    class="ft-panel ft-tasks-panel"
+    id="ft-tasks-panel"
+    data-ft="tasks-panel"
+    data-open="false"
+    role="dialog"
+    aria-label="Tasks"
+  >
+    <ul class="ft-todos" data-ft="todo-list" aria-label="To do"></ul>
+    <p class="ft-todo-hint">
+      one task per line · paste a list · "x2" at the end means 2 sessions
+    </p>
+    <section class="ft-todo-done" data-ft="todo-done-wrap" hidden>
+      <h3>done today</h3>
+      <ul class="ft-todos" data-ft="todo-done"></ul>
+    </section>
   </div>
 
   <div
@@ -418,7 +445,7 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
         placeholder="what are you working on?"
       />
     </label>
-    <div class="ft-recent" data-ft="recent" aria-label="Recent tasks"></div>
+    <div class="ft-recent" data-ft="recent"></div>
   </div>
 
   <section class="ft-strip" data-ft="strip" aria-label="Plan" hidden>
@@ -1020,7 +1047,7 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
     margin-top: -0.75rem;
     font-size: 0.75rem;
   }
-  .ft-recent button {
+  .ft-recent .ft-chip {
     max-width: 14rem;
     overflow: hidden;
     padding: 0.25rem 0.65rem;
@@ -1034,10 +1061,10 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
       border-color 150ms ease,
       transform 140ms var(--ft-ease-out);
   }
-  .ft-recent button[data-pressed] {
+  .ft-recent .ft-chip[data-pressed] {
     transform: scale(0.97);
   }
-  .ft-recent button:focus-visible {
+  .ft-recent .ft-chip:focus-visible {
     outline: 2px solid var(--ft-dim);
     outline-offset: 2px;
   }
@@ -1124,7 +1151,7 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
     }
   }
   @media (max-width: 560px) {
-    /* The back link and four pills fill a phone's top edge, so the fruit
+    /* The back link and the pills fill a phone's top edge, so the fruit
        button moves to the bottom-right corner and its picker opens up. */
     .ft-top.ft-top-left {
       top: auto;
@@ -1138,7 +1165,7 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
       bottom: 3rem;
       left: auto;
     }
-    /* Four pills plus the back link have to share a phone's width. */
+    /* The pills and the back link have to share a phone's width. */
     .ft-top {
       right: 0.75rem;
       gap: 0.3rem;
@@ -1157,11 +1184,199 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
       padding: 0.28rem 0.45rem;
     }
   }
-  /* No room for a fourth pill on the very smallest phones. */
   @media (max-width: 340px) {
+    .ft-top {
+      gap: 0.15rem;
+    }
+    .ft-pill {
+      padding: 0.28rem 0.38rem;
+    }
+  }
+  /* No room for a fifth pill on narrow screens (and phones can't pop a
+     window out anyway). */
+  @media (max-width: 560px) {
     .ft-pill[data-ft="mini-btn"] {
       display: none;
     }
+  }
+
+  /* ---- Tasks panel ---------------------------------------------------- */
+  /* A notepad: each task is a line you type in, with its checkbox before
+     it and its estimate after. */
+  .ft-tasks-panel {
+    width: min(22rem, calc(100vw - 2rem));
+    max-height: calc(100svh - 5rem);
+    overflow-y: auto;
+  }
+  .ft-todos {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .ft-todos:empty {
+    display: none;
+  }
+  .ft-todo {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    align-items: start;
+    gap: 0.5rem;
+    padding: 0.3rem 0.35rem;
+    border-radius: 8px;
+  }
+  .ft-todo[aria-current="true"] {
+    background: rgb(var(--ft-ink-rgb) / 0.06);
+  }
+  .ft-panel .ft-todo input[type="checkbox"] {
+    width: auto;
+    margin: 0.3rem 0 0;
+    accent-color: var(--ft-focus);
+  }
+  .ft-todo-main {
+    display: grid;
+    min-width: 0;
+  }
+  .ft-panel .ft-todo-text {
+    padding: 0 0 0.1rem;
+    border: 0;
+    border-bottom: 1px solid transparent;
+    border-radius: 0;
+    text-align: left;
+    transition: border-color 150ms ease;
+  }
+  .ft-panel .ft-todo-text:focus-visible {
+    border-bottom-color: var(--ft-color);
+  }
+  .ft-todo-text::placeholder {
+    color: rgb(var(--ft-ink-rgb) / 0.35);
+  }
+  .ft-todo-meta {
+    display: flex;
+    gap: 0.5rem;
+    color: var(--ft-dim);
+    font-size: 0.7rem;
+  }
+  .ft-todo-meta:has(span:empty) {
+    display: none;
+  }
+  .ft-todo[aria-current="true"] .ft-todo-meta {
+    color: var(--ft-hot);
+  }
+  .ft-todo-work {
+    color: var(--ft-dim);
+    text-decoration: underline;
+    text-decoration-color: var(--ft-faint);
+    text-underline-offset: 2px;
+  }
+  .ft-todo-est {
+    display: flex !important;
+    align-items: center;
+    gap: 0.2rem;
+    color: var(--ft-dim);
+  }
+  .ft-panel .ft-todo-est input {
+    width: 2.6rem;
+    padding: 0.05rem 0.3rem;
+    text-align: center;
+  }
+  .ft-todo-remove {
+    display: grid;
+    width: 1.5rem;
+    height: 1.5rem;
+    place-items: center;
+    border-radius: 999px;
+    color: rgb(var(--ft-ink-rgb) / 0.3);
+    transition:
+      color 150ms ease,
+      background-color 150ms ease;
+  }
+  /* The empty line waiting at the bottom is just a place to type. */
+  .ft-todo.is-blank .ft-todo-check {
+    visibility: hidden;
+  }
+  .ft-todo.is-blank :is(.ft-todo-est, .ft-todo-remove) {
+    display: none !important;
+  }
+  .ft-todo.is-blank .ft-todo-main {
+    grid-column: 2 / -1;
+  }
+  .ft-tasks-panel button:focus-visible,
+  .ft-todo input[type="checkbox"]:focus-visible {
+    outline: 2px solid var(--ft-dim);
+    outline-offset: 2px;
+  }
+  .ft-todo.is-done {
+    grid-template-columns: auto 1fr auto;
+  }
+  .ft-todo-name {
+    overflow: hidden;
+    color: var(--ft-dim);
+    text-decoration: line-through;
+    text-decoration-color: var(--ft-faint);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ft-todo-hint {
+    margin: 0;
+    color: rgb(var(--ft-ink-rgb) / 0.4);
+    font-size: 0.7rem;
+    line-height: 1.5;
+  }
+  .ft-todo-done {
+    display: grid;
+    gap: 0.35rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--ft-faint);
+  }
+  .ft-todo-done h3 {
+    margin: 0;
+    color: var(--ft-dim);
+    font-size: 0.75rem;
+    font-weight: normal;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .ft-todo-remove:hover {
+      background: rgb(var(--ft-ink-rgb) / 0.07);
+      color: var(--ft-ink);
+    }
+    .ft-todo-work:hover {
+      color: var(--ft-ink);
+    }
+    .ft-panel .ft-todo-text:hover:not(:focus) {
+      border-bottom-color: var(--ft-faint);
+    }
+  }
+
+  /* ---- Skip ------------------------------------------------------------ */
+  /* Sized to its own text, not stretched to the chip row's height, so the
+     hit area sits evenly around the words and their underline. */
+  .ft-skip {
+    align-self: center;
+    padding: 0.15rem 0.4rem 0.3rem;
+    color: var(--ft-dim);
+    text-decoration: underline;
+    text-decoration-color: var(--ft-faint);
+    text-underline-offset: 3px;
+    transition: color 150ms ease;
+  }
+  .ft-skip:focus-visible {
+    outline: 2px solid var(--ft-dim);
+    outline-offset: 2px;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .ft-skip:hover {
+      color: var(--ft-ink);
+    }
+  }
+  .ft-toast[data-action] {
+    pointer-events: auto;
+  }
+  .ft-toast button {
+    margin-left: 0.6rem;
+    color: var(--ft-hot);
+    text-decoration: underline;
+    text-underline-offset: 3px;
   }
 
   /* ---- Plan panel ----------------------------------------------------- */
@@ -1253,8 +1468,9 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
   }
 
   /* ---- Timeline strip ------------------------------------------------- */
-  /* No recent-task chips during a plan; don't hold their row open. */
-  .ft.has-plan .ft-recent {
+  /* No task chips during a plan; don't hold their row open unless the
+     skip link is in it. */
+  .ft.has-plan .ft-recent:empty {
     display: none;
   }
   /* Full size whenever it fits; only on a short screen with the plan's
@@ -1401,7 +1617,7 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
 
   @media (hover: hover) and (pointer: fine) {
     .ft-pill:hover,
-    .ft-recent button:hover,
+    .ft-recent .ft-chip:hover,
     .ft-plan-quick button:hover:not(:disabled) {
       border-color: var(--ft-dim);
       color: var(--ft-ink);
@@ -1440,7 +1656,7 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
     .ft-panel[data-open="true"] {
       transform: none;
     }
-    .ft-recent button[data-pressed],
+    .ft-recent .ft-chip[data-pressed],
     .ft-plan-quick button[data-pressed],
     .ft-fruit-grid button[data-pressed],
     .ft-panel-actions .ft-plan-go[data-pressed] {
