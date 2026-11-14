@@ -15,12 +15,24 @@ const makeId = () => `b${Date.now().toString(36)}${(nextId++).toString(36)}`;
  * @param {number} end    window end (ms since epoch)
  * @param {{focus: number, short: number, long: number, every: number}} settings  minutes
  * @param {string} [label] label for the focus blocks
+ * @param {{focusDone?: number, breakFirst?: "short"|"long"|null}} [opts]
+ *   focusDone: focus blocks already finished, so the long-break cadence
+ *   carries on; breakFirst: open with this break (re-fitting mid-break).
  * @returns {{id: string, kind: "focus"|"short"|"long"|"wrap", start: number, end: number, label: string}[]}
  */
-export function buildPlan(start, end, settings, label = "") {
+export function buildPlan(
+  start,
+  end,
+  settings,
+  label = "",
+  { focusDone = 0, breakFirst = null } = {}
+) {
   const blocks = [];
   let t = start;
-  let focusCount = 0;
+  let focusCount = focusDone;
+  let pendingBreak = breakFirst;
+  // A focus length under 10 minutes is its own minimum.
+  const minFocus = Math.min(MIN_FOCUS_MS, settings.focus * MIN);
   const push = (kind, ms, text = "") => {
     blocks.push({ id: makeId(), kind, start: t, end: t + ms, label: text });
     t += ms;
@@ -28,24 +40,26 @@ export function buildPlan(start, end, settings, label = "") {
 
   while (end - t > 0) {
     const left = end - t;
-    if (left < MIN_FOCUS_MS) {
+    if (pendingBreak) {
+      const breakKind = pendingBreak;
+      const breakMs = Math.min(settings[breakKind] * MIN, left);
+      pendingBreak = null;
+      // No room for another focus block after this break: the rest is a
+      // wrap-up buffer before whatever comes next.
+      if (left - breakMs < minFocus) {
+        push("wrap", left);
+        break;
+      }
+      push(breakKind, breakMs);
+      continue;
+    }
+    if (left < minFocus) {
       push("wrap", left);
       break;
     }
     push("focus", Math.min(settings.focus * MIN, left), label);
     focusCount += 1;
-
-    const afterFocus = end - t;
-    if (afterFocus <= 0) break;
-    const kind = focusCount % settings.every === 0 ? "long" : "short";
-    const breakMs = Math.min(settings[kind] * MIN, afterFocus);
-    // No room for another focus block after this break: the rest is a
-    // wrap-up buffer before whatever comes next.
-    if (afterFocus - breakMs < MIN_FOCUS_MS) {
-      push("wrap", afterFocus);
-      break;
-    }
-    push(kind, breakMs);
+    pendingBreak = focusCount % settings.every === 0 ? "long" : "short";
   }
   return blocks;
 }
@@ -61,6 +75,33 @@ export function describePlan(blocks) {
   }
   if (wrap) parts.push(`${Math.round((wrap.end - wrap.start) / MIN)}m wrap up`);
   return parts.join(" · ");
+}
+
+/**
+ * Rows for the plan panel, e.g. focus "3 × 25m", breaks "2 × 5m + 1 × 15m",
+ * wrap up "3m". Blocks of equal length are grouped; empty rows are left out.
+ * @returns {{label: string, value: string}[]}
+ */
+export function summarizePlan(blocks) {
+  const minutes = b => Math.round((b.end - b.start) / MIN);
+  const groups = list => {
+    const counts = new Map();
+    for (const b of list) {
+      const m = minutes(b);
+      counts.set(m, (counts.get(m) ?? 0) + 1);
+    }
+    return [...counts].map(([m, n]) => `${n} × ${m}m`).join(" + ");
+  };
+  const rows = [];
+  const focus = blocks.filter(b => b.kind === "focus");
+  const breaks = blocks.filter(b => b.kind === "short" || b.kind === "long");
+  const wrap = blocks.find(b => b.kind === "wrap");
+  if (focus.length) rows.push({ label: "focus", value: groups(focus) });
+  if (breaks.length) rows.push({ label: "breaks", value: groups(breaks) });
+  if (wrap && minutes(wrap) > 0) {
+    rows.push({ label: "wrap up", value: `${minutes(wrap)}m` });
+  }
+  return rows;
 }
 
 /** Index of the block containing `now`, or -1. */
