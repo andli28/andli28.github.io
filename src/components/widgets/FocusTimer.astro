@@ -148,12 +148,21 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
       <input type="time" data-ft="plan-end" />
     </label>
     <div class="ft-plan-quick">
-      <button type="button" data-plan-add="30">+30m</button>
-      <button type="button" data-plan-add="60">+1h</button>
-      <button type="button" data-plan-add="120">+2h</button>
-      <button type="button" data-plan-add="180">+3h</button>
+      <button type="button" data-plan-add="-30" aria-label="30 minutes earlier"
+        >−30m</button
+      >
+      <button type="button" data-plan-add="30" aria-label="30 minutes later"
+        >+30m</button
+      >
+      <button type="button" data-plan-add="60" aria-label="1 hour later"
+        >+1h</button
+      >
+      <button type="button" data-plan-add="120" aria-label="2 hours later"
+        >+2h</button
+      >
     </div>
-    <p class="ft-plan-summary" data-ft="plan-summary"></p>
+    <div class="ft-plan-summary" data-ft="plan-summary" aria-live="polite">
+    </div>
     <div class="ft-panel-actions">
       <button type="button" data-ft="plan-clear" hidden>clear plan</button>
       <button type="button" class="ft-plan-go" data-ft="plan-go">
@@ -1186,9 +1195,33 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
   .ft-plan-quick button[data-pressed] {
     transform: scale(0.97);
   }
+  .ft-plan-quick button:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
   .ft-plan-summary {
     min-height: 1.2em;
     color: var(--ft-ink);
+  }
+  .ft-plan-summary p {
+    margin: 0;
+  }
+  .ft-plan-summary .ft-plan-total {
+    margin-bottom: 0.35rem;
+    color: var(--ft-dim);
+  }
+  .ft-plan-summary dl {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.15rem 1rem;
+    margin: 0;
+  }
+  .ft-plan-summary dt {
+    color: var(--ft-dim);
+  }
+  .ft-plan-summary dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
   }
   .ft-panel-actions .ft-plan-go {
     margin-left: auto;
@@ -1369,7 +1402,7 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
   @media (hover: hover) and (pointer: fine) {
     .ft-pill:hover,
     .ft-recent button:hover,
-    .ft-plan-quick button:hover {
+    .ft-plan-quick button:hover:not(:disabled) {
       border-color: var(--ft-dim);
       color: var(--ft-ink);
     }

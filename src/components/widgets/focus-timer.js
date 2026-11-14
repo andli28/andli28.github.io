@@ -6,7 +6,12 @@
 // a list of blocks pinned to clock times; while following one, the timer
 // counts down to the current block's planned end.
 
-import { blockAt, buildPlan, describePlan } from "./focus-plan.js";
+import {
+  blockAt,
+  buildPlan,
+  describePlan,
+  summarizePlan,
+} from "./focus-plan.js";
 import { createMini, miniSupported } from "./focus-mini.js";
 import {
   DIAL_MS,
@@ -645,19 +650,69 @@ export function mountFocusTimer(root) {
       notice("not enough time left to replan ✿ plan cleared");
       return;
     }
-    const labels = plan.blocks
-      .filter(b => b.kind === "focus" && b.end > now)
-      .map(b => b.label);
     const fresh = buildPlan(now, plan.end, state.settings, "");
-    let i = 0;
-    for (const b of fresh) {
-      if (b.kind === "focus") b.label = labels[i++] ?? labels.at(-1) ?? "";
-    }
+    carryLabels(
+      plan.blocks.filter(b => b.end > now),
+      fresh
+    );
     // Keep finished blocks so the strip still shows the morning so far.
     plan.blocks = [...plan.blocks.filter(b => b.end <= now), ...fresh];
     state.planIdx = null;
     state.planPaused = false;
     syncPlan({ fromLoad: true });
+  }
+
+  // Give the new focus blocks the old ones' labels, in order.
+  function carryLabels(oldBlocks, fresh) {
+    const labels = oldBlocks.filter(b => b.kind === "focus").map(b => b.label);
+    let i = 0;
+    for (const b of fresh) {
+      if (b.kind === "focus") b.label = labels[i++] ?? labels.at(-1) ?? "";
+    }
+  }
+
+  // New settings mid-plan: rebuild from the start of the current block, so
+  // a longer focus length stretches the block you're in, and a shorter one
+  // past the time already spent ends it now. Finished blocks stay as they
+  // were, and the long-break cadence carries on.
+  function refitPlan() {
+    const plan = state.plan;
+    if (!plan) return;
+    const now = Date.now();
+    const idx = blockAt(plan.blocks, now);
+    if (idx < 0) return;
+    const cur = plan.blocks[idx];
+    if (cur.kind === "wrap") {
+      notice("wrapping up ✿ new lengths apply to your next plan");
+      return;
+    }
+    const kept = plan.blocks.slice(0, idx);
+    const fresh = buildPlan(cur.start, plan.end, state.settings, "", {
+      focusDone: kept.filter(b => b.kind === "focus").length,
+      breakFirst: cur.kind === "focus" ? null : cur.kind,
+    });
+    carryLabels(plan.blocks.slice(idx), fresh);
+    fresh[0].id = cur.id;
+    plan.blocks = [...kept, ...fresh];
+
+    const block = fresh[0];
+    // A paused plan keeps its frozen countdown, moved by the same amount.
+    if (!state.running && state.remaining != null) {
+      state.remaining = Math.max(0, state.remaining + block.end - cur.end);
+    }
+    if (block.end > now) {
+      // Still in the same block, now longer or shorter.
+      state.setMs = block.end - block.start;
+      if (state.running) state.endAt = block.end;
+      if (state.mode === "break") state.breakKind = block.kind;
+    } else if (following()) {
+      // The new length is already used up: move on as if it just ended.
+      syncPlan();
+      return;
+    }
+    save();
+    render();
+    notice("plan updated ✿ new lengths from this block on");
   }
 
   // Leaving the plan (dragging the dial, switching tabs) asks first.
@@ -679,26 +734,50 @@ export function mountFocusTimer(root) {
     return true;
   }
 
+  function planMessage(text) {
+    const p = document.createElement("p");
+    p.textContent = text;
+    el.planSummary.replaceChildren(p);
+    el.planGo.disabled = true;
+  }
+
+  // The end time the panel shows, or null if the field is empty.
+  const planEndValue = now => nextClockTime(el.planEnd.value, now);
+
   function planPreview() {
     const now = Date.now();
-    const end = nextClockTime(el.planEnd.value, now);
+    const end = planEndValue(now);
+    // The quick buttons move the shown time; grey out any that would push
+    // it outside 10 minutes to 12 hours from now.
+    const base = end != null && end > now ? end : now;
+    for (const quick of el.planQuick) {
+      const next = base + Number(quick.dataset.planAdd) * MIN;
+      quick.disabled = next - now < MIN_PLAN_MS || next - now > MAX_PLAN_MS;
+    }
     if (end && end <= now) {
-      el.planSummary.textContent = "that time has already passed";
-      el.planGo.disabled = true;
+      planMessage("that time has already passed");
       return null;
     }
     if (!end || end - now < MIN_PLAN_MS) {
-      el.planSummary.textContent = "pick a time at least 10 minutes away";
-      el.planGo.disabled = true;
+      planMessage("pick a time at least 10 minutes away");
       return null;
     }
     if (end - now > MAX_PLAN_MS) {
-      el.planSummary.textContent = "plans can be up to 12 hours";
-      el.planGo.disabled = true;
+      planMessage("plans can be up to 12 hours");
       return null;
     }
-    const blocks = buildPlan(now, end, state.settings);
-    el.planSummary.textContent = `${fmtMinutes(Math.round((end - now) / MIN))} · ${describePlan(blocks)}`;
+    const total = document.createElement("p");
+    total.className = "ft-plan-total";
+    total.textContent = `${fmtMinutes(Math.round((end - now) / MIN))} from now`;
+    const list = document.createElement("dl");
+    for (const row of summarizePlan(buildPlan(now, end, state.settings))) {
+      const dt = document.createElement("dt");
+      dt.textContent = row.label;
+      const dd = document.createElement("dd");
+      dd.textContent = row.value;
+      list.append(dt, dd);
+    }
+    el.planSummary.replaceChildren(total, list);
     el.planGo.disabled = false;
     return end;
   }
@@ -835,8 +914,8 @@ export function mountFocusTimer(root) {
     btn.setAttribute("aria-expanded", "true");
     if (name === "plan") {
       if (!el.planEnd.value) {
-        // Default: two hours from now, rounded up to a half hour.
-        const d = new Date(Date.now() + 2 * 60 * MIN);
+        // Default: an hour from now, rounded up to a half hour.
+        const d = new Date(Date.now() + 60 * MIN);
         const m = d.getMinutes();
         if (m > 0) d.setMinutes(m <= 30 ? 30 : 60);
         d.setSeconds(0, 0);
@@ -899,8 +978,11 @@ export function mountFocusTimer(root) {
       const key = field.dataset.ftSet;
       state.settings[key] = clampSetting(key, field.value);
       field.value = String(state.settings[key]);
-      // A new length applies right away if that mode is loaded and idle.
-      if (key === tabKey() && !inProgress() && !state.plan) {
+      if (state.plan) {
+        // Re-fit the plan around the new lengths.
+        refitPlan();
+      } else if (key === tabKey() && !inProgress()) {
+        // A new length applies right away if that mode is loaded and idle.
         const from = state.remaining;
         setLength(lengthFor(key));
         animateWedge(Math.min(from, DIAL_MS), state.setMs, SWEEP_SWITCH_MS);
@@ -917,8 +999,13 @@ export function mountFocusTimer(root) {
   el.planEnd.addEventListener("input", planPreview);
   for (const quick of el.planQuick) {
     quick.addEventListener("click", () => {
-      const end = Date.now() + Number(quick.dataset.planAdd) * MIN;
-      el.planEnd.value = toTimeValue(end);
+      // Move the time shown (or now, if it's empty or already passed).
+      const now = Date.now();
+      const end = planEndValue(now);
+      const base = end != null && end > now ? end : now;
+      el.planEnd.value = toTimeValue(
+        base + Number(quick.dataset.planAdd) * MIN
+      );
       planPreview();
     });
   }
