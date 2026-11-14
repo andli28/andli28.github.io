@@ -453,14 +453,14 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
     <div class="ft-strip-head">
       <span data-ft="strip-start"></span>
       <button type="button" class="ft-replan" data-ft="replan" hidden>
-        replan from now
+        replan<span class="ft-replan-more"> from now</span>
       </button>
+      <div class="ft-strip-actions" data-ft="strip-actions"></div>
       <span data-ft="strip-end"></span>
     </div>
     <div class="ft-track" data-ft="track">
       <div class="ft-now" data-ft="now" aria-hidden="true"><i></i></div>
     </div>
-    <div class="ft-strip-actions" data-ft="strip-actions"></div>
     <div class="ft-label-editor" data-ft="label-editor" hidden>
       <span data-ft="label-time"></span>
       <input
@@ -1678,15 +1678,14 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
   .ft.has-plan .ft-stage {
     padding-bottom: 7rem;
   }
-  /* The timeline, with skip and note at its right end. */
+  /* The timeline sits centered under the dial, with equal room on both
+     sides; skip and note hang off its right end in that room. */
   .ft-strip {
+    --ft-strip-side: 8.75rem;
     position: absolute;
-    right: 1.25rem;
+    right: var(--ft-strip-side);
     bottom: 2.6rem;
-    left: 1.25rem;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    column-gap: 1.25rem;
+    left: var(--ft-strip-side);
     max-width: 960px;
     margin-inline: auto;
     font-size: 0.7rem;
@@ -1696,18 +1695,17 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
       opacity: 0;
     }
   }
-  .ft-strip-head,
-  .ft-track,
-  .ft-label-editor {
-    grid-column: 1;
-  }
   .ft-strip-actions {
+    position: absolute;
+    /* Level with the track, which starts below this header row. */
+    top: calc(100% + 0.35rem);
+    left: calc(100% + 1.1rem);
     display: flex;
-    grid-row: 2;
-    grid-column: 2;
     align-items: center;
     gap: 0.9rem;
+    height: 26px;
     font-size: 0.8rem;
+    white-space: nowrap;
   }
   .ft-strip-actions:empty {
     display: none;
@@ -1715,8 +1713,29 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
   .ft-strip-actions .ft-skip {
     padding-inline: 0.15rem;
   }
+  /* Phones have no room beside the track: the buttons join the header
+     row, between the start and end times. */
+  @media (max-width: 640px) {
+    .ft-strip {
+      --ft-strip-side: 1.25rem;
+    }
+    .ft-strip-actions {
+      position: static;
+      height: auto;
+      margin-left: auto;
+      margin-right: 0.9rem;
+    }
+  }
+  @media (max-width: 400px) {
+    .ft-replan-more {
+      display: none;
+    }
+  }
   .ft-strip-head {
+    position: relative;
     display: flex;
+    gap: 0.75rem;
+    white-space: nowrap;
     align-items: baseline;
     justify-content: space-between;
     margin-bottom: 0.35rem;
