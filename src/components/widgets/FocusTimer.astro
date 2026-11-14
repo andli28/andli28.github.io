@@ -153,9 +153,10 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
     aria-label="Tasks"
   >
     <ul class="ft-todos" data-ft="todo-list" aria-label="To do"></ul>
-    <p class="ft-todo-hint">
-      one task per line · paste a list · "x2" at the end means 2 sessions
-    </p>
+    <section class="ft-todo-done ft-notes" data-ft="notes-wrap" hidden>
+      <h3>notes</h3>
+      <ul class="ft-todos" data-ft="notes"></ul>
+    </section>
     <section class="ft-todo-done" data-ft="todo-done-wrap" hidden>
       <h3>done today</h3>
       <ul class="ft-todos" data-ft="todo-done"></ul>
@@ -459,6 +460,7 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
     <div class="ft-track" data-ft="track">
       <div class="ft-now" data-ft="now" aria-hidden="true"><i></i></div>
     </div>
+    <div class="ft-strip-actions" data-ft="strip-actions"></div>
     <div class="ft-label-editor" data-ft="label-editor" hidden>
       <span data-ft="label-time"></span>
       <input
@@ -1039,6 +1041,7 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
 
   .ft-recent {
     display: flex;
+    align-items: center;
     flex-wrap: wrap;
     justify-content: center;
     gap: 0.4rem;
@@ -1257,6 +1260,40 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
     color: var(--ft-dim);
     font-size: 0.7rem;
   }
+  .ft-todo-meta > * {
+    white-space: nowrap;
+  }
+  /* Narrow phones: the name gets the whole first line, and the estimate
+     moves down beside the progress note. */
+  @media (max-width: 380px) {
+    .ft-todo:not(.is-done) {
+      grid-template-areas:
+        "check text remove"
+        ". meta est";
+      grid-template-columns: auto 1fr auto;
+      row-gap: 0.15rem;
+    }
+    .ft-todo:not(.is-done) .ft-todo-main {
+      display: contents;
+    }
+    .ft-todo:not(.is-done) .ft-todo-check {
+      grid-area: check;
+    }
+    .ft-todo:not(.is-done) .ft-todo-text {
+      grid-area: text;
+    }
+    .ft-todo:not(.is-done) .ft-todo-meta {
+      grid-area: meta;
+      align-self: center;
+    }
+    .ft-todo:not(.is-done) .ft-todo-est {
+      grid-area: est;
+      justify-self: end;
+    }
+    .ft-todo:not(.is-done) .ft-todo-remove {
+      grid-area: remove;
+    }
+  }
   .ft-todo-meta:has(span:empty) {
     display: none;
   }
@@ -1270,15 +1307,37 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
     text-underline-offset: 2px;
   }
   .ft-todo-est {
-    display: flex !important;
+    display: flex;
     align-items: center;
-    gap: 0.2rem;
+    gap: 0.1rem;
     color: var(--ft-dim);
   }
   .ft-panel .ft-todo-est input {
-    width: 2.6rem;
-    padding: 0.05rem 0.3rem;
+    width: 2.1rem;
+    padding: 0.05rem 0.2rem;
     text-align: center;
+  }
+  .ft-todo-step {
+    display: grid;
+    width: 1.4rem;
+    height: 1.6rem;
+    place-items: center;
+    border-radius: 6px;
+    color: var(--ft-dim);
+    font-size: 0.95rem;
+    transition:
+      color 150ms ease,
+      background-color 150ms ease;
+  }
+  .ft-todo-step:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .ft-todo-step:hover:not(:disabled) {
+      background: rgb(var(--ft-ink-rgb) / 0.07);
+      color: var(--ft-ink);
+    }
   }
   .ft-todo-remove {
     display: grid;
@@ -1317,12 +1376,6 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .ft-todo-hint {
-    margin: 0;
-    color: rgb(var(--ft-ink-rgb) / 0.4);
-    font-size: 0.7rem;
-    line-height: 1.5;
-  }
   .ft-todo-done {
     display: grid;
     gap: 0.35rem;
@@ -1345,6 +1398,150 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
     }
     .ft-panel .ft-todo-text:hover:not(:focus) {
       border-bottom-color: var(--ft-faint);
+    }
+  }
+
+  /* ---- Notes ---------------------------------------------------------- */
+  .ft-note {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: start;
+    gap: 0.5rem;
+    padding: 0.3rem 0.35rem;
+  }
+  .ft-note p {
+    margin: 0;
+    white-space: pre-line;
+    color: var(--ft-ink);
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+  .ft-note small {
+    color: var(--ft-dim);
+    font-size: 0.7rem;
+  }
+  .ft-note-task {
+    padding: 0.1rem 0.5rem;
+    border: 1px solid var(--ft-faint);
+    border-radius: 999px;
+    color: var(--ft-dim);
+    white-space: nowrap;
+    transition:
+      color 150ms ease,
+      border-color 150ms ease;
+  }
+  /* The quick notepad floats from the note button. */
+  .ft-note-wrap {
+    position: relative;
+    display: inline-flex;
+  }
+  .ft-note-pop {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 0.6rem);
+    z-index: 7;
+    display: grid;
+    gap: 0.45rem;
+    width: min(17rem, calc(100vw - 2rem));
+    padding: 0.6rem;
+    border: 1px solid var(--ft-faint);
+    border-radius: 12px;
+    background: var(--ft-surface);
+    box-shadow: 0 18px 40px rgb(var(--ft-shadow-rgb) / 0.14);
+    font-size: 0.75rem;
+    opacity: 0;
+    transform: scale(0.96);
+    transform-origin: bottom right;
+    visibility: hidden;
+    transition:
+      opacity 120ms ease-out,
+      transform 120ms ease-out,
+      visibility 0s linear 120ms;
+  }
+  /* Under the task line it's centered on the button, and opens downward
+     when there's room. */
+  .ft-note-wrap[data-align="center"] .ft-note-pop {
+    right: 50%;
+    transform: translateX(50%) scale(0.96);
+    transform-origin: bottom center;
+  }
+  .ft-note-wrap[data-dir="down"] .ft-note-pop {
+    top: calc(100% + 0.6rem);
+    bottom: auto;
+    transform-origin: top center;
+  }
+  .ft-note-pop[data-open="true"] {
+    opacity: 1;
+    transform: none;
+    visibility: visible;
+    transition:
+      opacity 180ms var(--ft-ease-out),
+      transform 180ms var(--ft-ease-out);
+  }
+  .ft-note-wrap[data-align="center"] .ft-note-pop[data-open="true"] {
+    transform: translateX(50%);
+  }
+  .ft-note-input {
+    width: 100%;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid var(--ft-faint);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ft-ink);
+    font: inherit;
+    /* 16px keeps iOS Safari from zooming the page on focus */
+    font-size: 16px;
+    line-height: 1.35;
+    resize: none;
+  }
+  .ft-note-input:focus-visible {
+    border-color: var(--ft-color);
+    outline: none;
+  }
+  .ft-note-input::placeholder {
+    color: rgb(var(--ft-ink-rgb) / 0.4);
+  }
+  .ft-note-foot {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    color: rgb(var(--ft-ink-rgb) / 0.45);
+  }
+  .ft-note-foot button {
+    padding: 0.2rem 0.75rem;
+    border-radius: 999px;
+    background: var(--ft-focus);
+    color: #fff;
+  }
+  .ft-note-foot button:focus-visible {
+    outline: 2px solid var(--ft-dim);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ft-note-pop,
+    .ft-note-pop[data-open="true"] {
+      transition: none;
+    }
+  }
+  /* Notes are waiting: a small dot on the tasks pill. */
+  .ft-pill[data-badge] {
+    position: relative;
+  }
+  .ft-pill[data-badge]::after {
+    position: absolute;
+    top: 0.1rem;
+    right: 0.1rem;
+    width: 0.4rem;
+    height: 0.4rem;
+    border-radius: 999px;
+    background: var(--ft-hot);
+    content: "";
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .ft-note-task:hover {
+      border-color: var(--ft-dim);
+      color: var(--ft-ink);
     }
   }
 
@@ -1481,11 +1678,15 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
   .ft.has-plan .ft-stage {
     padding-bottom: 7rem;
   }
+  /* The timeline, with skip and note at its right end. */
   .ft-strip {
     position: absolute;
     right: 1.25rem;
     bottom: 2.6rem;
     left: 1.25rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 1.25rem;
     max-width: 960px;
     margin-inline: auto;
     font-size: 0.7rem;
@@ -1494,6 +1695,25 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
     @starting-style {
       opacity: 0;
     }
+  }
+  .ft-strip-head,
+  .ft-track,
+  .ft-label-editor {
+    grid-column: 1;
+  }
+  .ft-strip-actions {
+    display: flex;
+    grid-row: 2;
+    grid-column: 2;
+    align-items: center;
+    gap: 0.9rem;
+    font-size: 0.8rem;
+  }
+  .ft-strip-actions:empty {
+    display: none;
+  }
+  .ft-strip-actions .ft-skip {
+    padding-inline: 0.15rem;
   }
   .ft-strip-head {
     display: flex;
@@ -1517,8 +1737,10 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
     position: absolute;
     top: 0;
     bottom: 0;
+    /* A block's label hides when the block is too narrow to show it. */
+    container-type: inline-size;
     overflow: hidden;
-    padding: 0 6px;
+    padding: 0;
     border-radius: 5px;
     /* a hairline gap between neighbours */
     box-shadow: inset -2px 0 0 var(--ft-bg);
@@ -1557,7 +1779,18 @@ const FRUITS = ["tomato", "orange", "apple", "watermelon"];
     outline: 2px solid var(--ft-dim);
     outline-offset: 1px;
   }
-  .ft-block-focus:empty::before {
+  .ft-block > span {
+    display: block;
+    overflow: hidden;
+    padding: 0 6px;
+    text-overflow: ellipsis;
+  }
+  @container (max-width: 28px) {
+    .ft-block > span {
+      display: none;
+    }
+  }
+  .ft-block-focus > span:empty::before {
     color: rgb(var(--ft-ink-rgb) / 0.45);
     content: "+ label";
   }

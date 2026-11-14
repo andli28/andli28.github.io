@@ -45,6 +45,28 @@ const SWEEP_SWITCH_MS = 260; // clicking a mode tab: a UI response
 const TOAST_MS = 5000;
 const MIN_PLAN_MS = 10 * MIN;
 const MAX_PLAN_MS = 12 * 60 * MIN;
+// Shown on the task line during a break, one per break.
+const BREAK_PROMPTS = {
+  short: [
+    "roll your shoulders back",
+    "look at something far away",
+    "stretch your arms overhead",
+    "refill your water",
+    "unclench your jaw",
+    "roll your wrists and ankles",
+    "take three slow breaths",
+    "stand up and touch your toes",
+  ],
+  long: [
+    "take a short walk",
+    "step outside for some air",
+    "get a snack and some water",
+    "stretch your back and hips",
+    "rest your eyes for a minute",
+  ],
+};
+const NOTE_MAX = 140;
+
 const KIND_NAME = {
   focus: "focus",
   short: "short break",
@@ -152,6 +174,8 @@ export function mountFocusTimer(root) {
       plan: { btn: $("plan-btn"), panel: $("plan-panel") },
     },
     todoList: $("todo-list"),
+    notesWrap: $("notes-wrap"),
+    notes: $("notes"),
     todoDoneWrap: $("todo-done-wrap"),
     todoDone: $("todo-done"),
     planEnd: $("plan-end"),
@@ -163,6 +187,7 @@ export function mountFocusTimer(root) {
     stripStart: $("strip-start"),
     stripEnd: $("strip-end"),
     track: $("track"),
+    stripActions: $("strip-actions"),
     now: $("now"),
     replan: $("replan"),
     editor: $("label-editor"),
@@ -187,6 +212,8 @@ export function mountFocusTimer(root) {
     settings,
     plan: saved.plan?.blocks?.length ? saved.plan : null,
     todos: Array.isArray(saved.todos) ? saved.todos : [],
+    notes: Array.isArray(saved.notes) ? saved.notes : [],
+    notesSeenAt: saved.notesSeenAt ?? 0,
     mode: t.mode === "break" ? "break" : "focus",
     breakKind: ["long", "wrap"].includes(t.breakKind) ? t.breakKind : "short",
     setMs: t.setMs ?? settings.focus * MIN,
@@ -326,8 +353,18 @@ export function mountFocusTimer(root) {
     const cutoff = Date.now() - HISTORY_DAYS * 86_400_000;
     state.log = state.log.filter(s => s.end >= cutoff);
     state.todos = state.todos.filter(t => !t.doneAt || t.doneAt >= cutoff);
-    const { log, sound, fruit, notify, settings, plan, todos, ...timer } =
-      state;
+    const {
+      log,
+      sound,
+      fruit,
+      notify,
+      settings,
+      plan,
+      todos,
+      notes,
+      notesSeenAt,
+      ...timer
+    } = state;
     try {
       localStorage.setItem(
         STORAGE_KEY,
@@ -339,6 +376,8 @@ export function mountFocusTimer(root) {
           settings,
           plan,
           todos,
+          notes,
+          notesSeenAt,
           timer,
         })
       );
@@ -367,22 +406,45 @@ export function mountFocusTimer(root) {
     return audio;
   }
 
-  function chime() {
+  // A different sound for each turn of the cycle, so you can tell them
+  // apart without looking: a soft, falling pair as a break begins (three
+  // notes for a long one), a brighter rising pair back to focus, and the
+  // full four-note chime when a plan is done.
+  const CHIMES = {
+    short: { notes: [659.25, 523.25], gap: 0.38, peak: 0.12, decay: 1.8 },
+    long: { notes: [659.25, 523.25, 392], gap: 0.42, peak: 0.12, decay: 2 },
+    wrap: { notes: [523.25, 392], gap: 0.4, peak: 0.1, decay: 1.8 },
+    focus: { notes: [523.25, 783.99], gap: 0.16, peak: 0.18, decay: 1.1 },
+    done: {
+      notes: [784, 1046.5, 784, 1046.5],
+      offsets: [0, 0.22, 0.9, 1.12],
+      peak: 0.22,
+      decay: 1.2,
+    },
+  };
+
+  function chime(kind = "done") {
     if (!state.sound) return;
     const ctx = ensureAudio();
     if (!ctx) return;
+    const c = CHIMES[kind] ?? CHIMES.done;
     const now = ctx.currentTime;
-    [0, 0.22, 0.9, 1.12].forEach((offset, i) => {
+    c.notes.forEach((freq, i) => {
+      const at = now + (c.offsets?.[i] ?? i * c.gap);
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = "sine";
-      osc.frequency.value = i % 2 ? 1046.5 : 784;
-      gain.gain.setValueAtTime(0.0001, now + offset);
-      gain.gain.exponentialRampToValueAtTime(0.22, now + offset + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 1.2);
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, at);
+      // Breaks fade in a little slower, so they don't startle.
+      gain.gain.exponentialRampToValueAtTime(
+        c.peak,
+        at + (kind === "focus" || kind === "done" ? 0.02 : 0.05)
+      );
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + c.decay);
       osc.connect(gain).connect(ctx.destination);
-      osc.start(now + offset);
-      osc.stop(now + offset + 1.25);
+      osc.start(at);
+      osc.stop(at + c.decay + 0.05);
     });
   }
 
@@ -454,6 +516,14 @@ export function mountFocusTimer(root) {
   }
 
   function phaseNotice(nextKind, nextLabel) {
+    const text = phaseText(nextKind, nextLabel);
+    // A break is when to look at what you jotted down.
+    const n = unseenNotes();
+    if (nextKind === "focus" || !n) return text;
+    return `${text} · ${n} ${n === 1 ? "note" : "notes"} in tasks`;
+  }
+
+  function phaseText(nextKind, nextLabel) {
     if (nextKind === "focus") {
       return nextLabel
         ? `back to it ✿ next up: ${nextLabel}`
@@ -605,7 +675,7 @@ export function mountFocusTimer(root) {
     }
     goTo(next);
     if (!quiet) {
-      chime();
+      chime(next);
       notice(phaseNotice(next, next === "focus" ? state.task : ""));
     }
     save();
@@ -664,7 +734,7 @@ export function mountFocusTimer(root) {
       state.planPaused = false;
       goTo("focus");
       if (!fromLoad) {
-        chime();
+        chime("done");
         notice(`all done ✿ that's your plan until ${fmtTime(plan.end)}`);
       }
       save();
@@ -717,7 +787,7 @@ export function mountFocusTimer(root) {
     render();
 
     if (changed && prev && !fromLoad && !resume) {
-      chime();
+      chime(block.kind);
       notice(phaseNotice(block.kind, block.label));
       animateWedge(0, block.end - now, SWEEP_PHASE_MS);
     }
@@ -1209,8 +1279,17 @@ export function mountFocusTimer(root) {
     meta.append(metaText, work);
     main.append(input, meta);
 
-    const estWrap = document.createElement("label");
+    const estWrap = document.createElement("div");
     estWrap.className = "ft-todo-est";
+    const step = (d, text, label) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "ft-todo-step";
+      b.dataset.step = String(d);
+      b.textContent = text;
+      b.setAttribute("aria-label", label);
+      return b;
+    };
     const estInput = document.createElement("input");
     estInput.type = "number";
     estInput.inputMode = "numeric";
@@ -1218,10 +1297,12 @@ export function mountFocusTimer(root) {
     estInput.max = "20";
     estInput.value = String(est);
     estInput.setAttribute("aria-label", "Estimated sessions");
-    const fruit = document.createElement("span");
-    fruit.textContent = "🍅";
-    fruit.setAttribute("aria-hidden", "true");
-    estWrap.append(estInput, fruit);
+    estWrap.append(
+      step(-1, "−", "Fewer sessions"),
+      estInput,
+      step(1, "+", "More sessions")
+    );
+    syncSteps(estWrap);
 
     const remove = document.createElement("button");
     remove.type = "button";
@@ -1232,6 +1313,14 @@ export function mountFocusTimer(root) {
     li.append(check, main, estWrap, remove);
     markBlank(li);
     return li;
+  }
+
+  // − stops at 1 session and + at 20.
+  function syncSteps(estWrap) {
+    const n = clampEst(estWrap.querySelector("input").value);
+    const [minus, plus] = estWrap.querySelectorAll(".ft-todo-step");
+    minus.disabled = n <= 1;
+    plus.disabled = n >= 20;
   }
 
   // A line with nothing in it yet shows only its text field.
@@ -1385,7 +1474,12 @@ export function mountFocusTimer(root) {
 
   el.todoList.addEventListener("input", e => {
     const li = e.target.closest(".ft-todo");
-    if (!li || !e.target.classList.contains("ft-todo-text")) return;
+    if (!li) return;
+    if (e.target.closest(".ft-todo-est")) {
+      syncSteps(e.target.closest(".ft-todo-est"));
+      return;
+    }
+    if (!e.target.classList.contains("ft-todo-text")) return;
     markBlank(li);
     ensureBlank();
   });
@@ -1466,7 +1560,14 @@ export function mountFocusTimer(root) {
     const btn = e.target.closest?.("button");
     if (!btn) return;
     const li = btn.closest(".ft-todo");
-    if (btn.classList.contains("ft-todo-remove")) {
+    if (btn.classList.contains("ft-todo-step")) {
+      // Like typing the number: saved with the rest when the panel closes.
+      const input = lineEst(li);
+      input.value = String(
+        clampEst(Number(input.value) + Number(btn.dataset.step))
+      );
+      syncSteps(btn.parentElement);
+    } else if (btn.classList.contains("ft-todo-remove")) {
       if (li.dataset.id) {
         lineAction(li, removeTodo);
       } else {
@@ -1491,6 +1592,7 @@ export function mountFocusTimer(root) {
       .sort((a, b) => a.doneAt - b.doneAt);
     el.todoDone.replaceChildren(...doneToday.map(doneRow));
     el.todoDoneWrap.hidden = doneToday.length === 0;
+    renderNotes();
     // While the panel is open the lines are yours: only refresh their notes.
     if (tasksOpen() && !force) {
       updateLines();
@@ -1520,6 +1622,163 @@ export function mountFocusTimer(root) {
     }
   }
 
+  // ---- Breaks and notes --------------------------------------------------
+
+  // The same prompt for the whole of a break, a different one next time.
+  function breakPrompt() {
+    const list = BREAK_PROMPTS[state.breakKind === "long" ? "long" : "short"];
+    const seed = Math.floor((state.startedAt ?? state.log.length) / 1000);
+    return list[seed % list.length];
+  }
+
+  const unseenNotes = () =>
+    state.notes.filter(n => n.at > state.notesSeenAt).length;
+
+  // Jot a stray thought down without leaving what you're doing: a small
+  // notepad that floats from the note button (above it beside the plan's
+  // timeline, below it under the task line), so nothing on the page moves.
+  // Enter keeps the note, Shift+Enter starts a new line, Escape drops it,
+  // and clicking away keeps it. Notes wait in the tasks panel, where each
+  // can become a task.
+  let noteOpen = false;
+  const noteWrap = document.createElement("span");
+  noteWrap.className = "ft-note-wrap";
+
+  const noteBtn = document.createElement("button");
+  noteBtn.type = "button";
+  noteBtn.className = "ft-skip ft-note-btn";
+  noteBtn.textContent = "✎ note";
+  noteBtn.title = "Jot down a stray thought (n)";
+  noteBtn.setAttribute("aria-expanded", "false");
+  noteBtn.addEventListener("click", () => (noteOpen ? saveNote() : openNote()));
+
+  const notePop = document.createElement("div");
+  notePop.className = "ft-note-pop";
+  notePop.setAttribute("role", "dialog");
+  notePop.setAttribute("aria-label", "Quick note");
+  notePop.dataset.open = "false";
+  notePop.inert = true;
+  const noteInput = document.createElement("textarea");
+  noteInput.className = "ft-note-input";
+  noteInput.maxLength = NOTE_MAX;
+  noteInput.rows = 3;
+  noteInput.placeholder = "a stray thought…";
+  noteInput.setAttribute("aria-label", "Quick note");
+  const noteFoot = document.createElement("div");
+  noteFoot.className = "ft-note-foot";
+  const noteKeep = document.createElement("button");
+  noteKeep.type = "button";
+  noteKeep.textContent = "keep";
+  noteKeep.addEventListener("click", () => saveNote());
+  noteFoot.append(noteKeep);
+  notePop.append(noteInput, noteFoot);
+  noteWrap.append(noteBtn, notePop);
+
+  function openNote() {
+    closePanels();
+    noteOpen = true;
+    noteInput.value = "";
+    // Below the button when there's room for it, otherwise above.
+    if (!state.plan) {
+      const below = window.innerHeight - noteBtn.getBoundingClientRect().bottom;
+      noteWrap.dataset.dir = below > notePop.offsetHeight + 24 ? "down" : "up";
+    }
+    notePop.dataset.open = "true";
+    notePop.inert = false;
+    noteBtn.setAttribute("aria-expanded", "true");
+    noteInput.focus({ preventScroll: true });
+  }
+
+  function closeNote() {
+    if (!noteOpen) return;
+    noteOpen = false;
+    notePop.dataset.open = "false";
+    notePop.inert = true;
+    noteBtn.setAttribute("aria-expanded", "false");
+  }
+
+  function saveNote() {
+    // Line breaks stay; runs of spaces and blank lines go.
+    const text = noteInput.value
+      .split("\n")
+      .map(line => line.replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+      .join("\n");
+    closeNote();
+    if (!text) return;
+    state.notes.push({
+      id: `n${Date.now().toString(36)}`,
+      text,
+      at: Date.now(),
+    });
+    save();
+    render();
+    notice("noted ✿ it'll wait in tasks");
+  }
+
+  noteInput.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      saveNote();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      closeNote();
+      noteBtn.focus();
+    }
+  });
+
+  function removeNote(note) {
+    state.notes = state.notes.filter(n => n !== note);
+    save();
+    renderTodos(true);
+  }
+
+  function noteToTask(note) {
+    commitDraft();
+    // A note of several lines becomes a task per line.
+    const added = parseTaskLines(note.text).map(t => ({
+      ...makeTodo(t.text),
+      est: t.est ?? 1,
+    }));
+    state.todos.splice(openTodos(state.todos).length, 0, ...added);
+    state.notes = state.notes.filter(n => n !== note);
+    relabelPlan();
+    save();
+    render();
+    renderTodos(true);
+  }
+
+  function renderNotes() {
+    el.notesWrap.hidden = state.notes.length === 0;
+    el.notes.replaceChildren(
+      ...state.notes.map(note => {
+        const li = document.createElement("li");
+        li.className = "ft-note";
+        const text = document.createElement("p");
+        text.textContent = note.text;
+        const meta = document.createElement("small");
+        meta.textContent = fmtTime(note.at);
+        const toTask = document.createElement("button");
+        toTask.type = "button";
+        toTask.className = "ft-note-task";
+        toTask.textContent = "→ task";
+        toTask.setAttribute("aria-label", `Add "${note.text}" to tasks`);
+        toTask.addEventListener("click", () => noteToTask(note));
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "ft-todo-remove";
+        remove.textContent = "×";
+        remove.setAttribute("aria-label", `Delete note "${note.text}"`);
+        remove.addEventListener("click", () => removeNote(note));
+        const body = document.createElement("div");
+        body.append(text, meta);
+        li.append(body, toTask, remove);
+        return li;
+      })
+    );
+  }
+
   // ---- Skip --------------------------------------------------------------
 
   const skipBtn = document.createElement("button");
@@ -1530,8 +1789,10 @@ export function mountFocusTimer(root) {
   function skipLabel() {
     const cur = state.plan?.blocks[blockAt(state.plan.blocks, Date.now())];
     const kind = cur?.kind ?? (state.mode === "focus" ? "focus" : "break");
-    if (kind === "wrap") return "end plan now";
-    return kind === "focus" ? "skip to break →" : "skip break →";
+    if (kind === "wrap") return ["end plan", "End the plan now"];
+    return kind === "focus"
+      ? ["skip", "Skip to your break"]
+      : ["skip", "Skip the rest of this break"];
   }
 
   // Jump to the next block now: cut a break short, or take the break early.
@@ -1562,8 +1823,9 @@ export function mountFocusTimer(root) {
       return;
     }
     // The block ends now; the rest of the plan is rebuilt from here.
-    // A block skipped the moment it began leaves nothing behind.
-    const keepCut = now - cur.start >= 1000;
+    // A block skipped in its first minute leaves nothing behind (too
+    // short to log, and only a sliver on the timeline).
+    const keepCut = now - cur.start >= MIN;
     const kept = plan.blocks.slice(0, idx);
     if (keepCut) kept.push({ ...cur, end: now });
     const focusDone =
@@ -1637,6 +1899,9 @@ export function mountFocusTimer(root) {
       el.planClear.hidden = !state.plan;
       el.planEnd.focus({ preventScroll: true });
     } else if (name === "tasks") {
+      state.notesSeenAt = Date.now();
+      save();
+      render();
       renderTodos(true);
       focusLine(el.todoList.lastElementChild);
     } else if (name === "fruit") {
@@ -1670,6 +1935,7 @@ export function mountFocusTimer(root) {
   }
 
   function onOutside(e) {
+    if (noteOpen && !noteWrap.contains(e.target)) saveNote();
     for (const { btn, panel } of Object.values(el.panels)) {
       if (
         panel.dataset.open === "true" &&
@@ -1963,14 +2229,19 @@ export function mountFocusTimer(root) {
   });
 
   const onKey = e => {
-    if (e.code !== "Space" || e.repeat || !root.isConnected) return;
+    if (e.repeat || !root.isConnected) return;
     const target = e.target;
-    if (
+    const typing =
       target instanceof HTMLElement &&
-      target.closest("input, textarea, select, button, [contenteditable]")
-    ) {
+      target.closest("input, textarea, select, [contenteditable]");
+    // "n" jots a note from anywhere on the page but a text field.
+    if (e.key === "n" && !typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      openNote();
       return;
     }
+    if (e.code !== "Space") return;
+    if (typing || target.closest?.("button")) return;
     e.preventDefault();
     toggle();
   };
@@ -2089,7 +2360,13 @@ export function mountFocusTimer(root) {
 
   function labelBlock(node, b) {
     const when = `${fmtTime(b.start)} – ${fmtTime(b.end)}`;
-    if (node.textContent !== b.label) node.textContent = b.label;
+    // The label is a child so a block too narrow for it can hide it.
+    let text = node.firstElementChild;
+    if (!text) {
+      text = document.createElement("span");
+      node.append(text);
+    }
+    if (text.textContent !== b.label) text.textContent = b.label;
     node.title = `${when} · ${b.label || "focus"} · click to label`;
     node.setAttribute(
       "aria-label",
@@ -2164,7 +2441,8 @@ export function mountFocusTimer(root) {
       "aria-label",
       open.length ? "Tasks" : "Recent tasks"
     );
-    el.recent.replaceChildren(
+    for (const chip of el.recent.querySelectorAll(".ft-chip")) chip.remove();
+    el.recent.prepend(
       ...recent.map(task => {
         const chip = document.createElement("button");
         chip.type = "button";
@@ -2180,9 +2458,23 @@ export function mountFocusTimer(root) {
         return chip;
       })
     );
+
+    // During a plan, skip and note sit at the end of the timeline;
+    // otherwise under the task line. They're only moved when that changes,
+    // so an open notepad keeps its focus.
+    const box = state.plan ? el.stripActions : el.recent;
+    if (noteWrap.parentElement !== box) box.append(noteWrap);
+    noteWrap.dataset.align = state.plan ? "end" : "center";
+    if (state.plan) noteWrap.dataset.dir = "up";
     if (inProgress() || state.plan) {
-      skipBtn.textContent = skipLabel();
-      el.recent.append(skipBtn);
+      const [label, title] = skipLabel();
+      skipBtn.textContent = label;
+      skipBtn.title = title;
+      if (skipBtn.nextElementSibling !== noteWrap) {
+        box.insertBefore(skipBtn, noteWrap);
+      }
+    } else {
+      skipBtn.remove();
     }
   }
 
@@ -2251,8 +2543,9 @@ export function mountFocusTimer(root) {
       state.mode === "break"
         ? state.breakKind === "wrap"
           ? "wrap up"
-          : "take a breath"
+          : breakPrompt()
         : "what are you working on?";
+    el.panels.tasks.btn.toggleAttribute("data-badge", unseenNotes() > 0);
 
     renderStrip();
     lastFrameKey = "";
