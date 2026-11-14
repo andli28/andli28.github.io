@@ -14,6 +14,16 @@ import {
 } from "./focus-plan.js";
 import { createMini, miniSupported } from "./focus-mini.js";
 import {
+  assignTodos,
+  clampEst,
+  fmtSessions,
+  makeTodo,
+  openTodos,
+  parseTaskLine,
+  parseTaskLines,
+  sessionsSpent,
+} from "./focus-todos.js";
+import {
   DIAL_MS,
   FRUIT_IDS,
   MIN,
@@ -138,8 +148,12 @@ export function mountFocusTimer(root) {
     panels: {
       fruit: { btn: $("fruit-btn"), panel: $("fruit-panel") },
       settings: { btn: $("settings-btn"), panel: $("panel") },
+      tasks: { btn: $("tasks-btn"), panel: $("tasks-panel") },
       plan: { btn: $("plan-btn"), panel: $("plan-panel") },
     },
+    todoList: $("todo-list"),
+    todoDoneWrap: $("todo-done-wrap"),
+    todoDone: $("todo-done"),
     planEnd: $("plan-end"),
     planQuick: [...root.querySelectorAll("[data-plan-add]")],
     planSummary: $("plan-summary"),
@@ -172,6 +186,7 @@ export function mountFocusTimer(root) {
     notify: saved.notify ?? false,
     settings,
     plan: saved.plan?.blocks?.length ? saved.plan : null,
+    todos: Array.isArray(saved.todos) ? saved.todos : [],
     mode: t.mode === "break" ? "break" : "focus",
     breakKind: ["long", "wrap"].includes(t.breakKind) ? t.breakKind : "short",
     setMs: t.setMs ?? settings.focus * MIN,
@@ -184,6 +199,12 @@ export function mountFocusTimer(root) {
     cycleDay: t.cycleDay ?? null, // the day `done` was last counted
     planIdx: t.planIdx ?? null, // block the timer is following
     planPaused: Boolean(t.planPaused),
+    todoId: t.todoId ?? null, // the list task being worked on, if any
+    // Checking off a task mid-session hands the rest of the session to the
+    // next one: `credited` is the focus time already logged to earlier
+    // tasks, and `segAt` when the current one took over.
+    credited: t.credited ?? 0,
+    segAt: t.segAt ?? null,
   };
   if (state.remaining == null) state.remaining = state.setMs;
   // A new day starts a new cycle toward the long break.
@@ -304,11 +325,22 @@ export function mountFocusTimer(root) {
   function save() {
     const cutoff = Date.now() - HISTORY_DAYS * 86_400_000;
     state.log = state.log.filter(s => s.end >= cutoff);
-    const { log, sound, fruit, notify, settings, plan, ...timer } = state;
+    state.todos = state.todos.filter(t => !t.doneAt || t.doneAt >= cutoff);
+    const { log, sound, fruit, notify, settings, plan, todos, ...timer } =
+      state;
     try {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ log, sound, fruit, notify, settings, plan, timer })
+        JSON.stringify({
+          log,
+          sound,
+          fruit,
+          notify,
+          settings,
+          plan,
+          todos,
+          timer,
+        })
       );
     } catch {
       // Storage can be unavailable (private mode); the timer still works.
@@ -373,12 +405,27 @@ export function mountFocusTimer(root) {
 
   // A soft note at the top of the page, and (if allowed, and you're not
   // looking at the page) a silent system notification with the same words.
-  function notice(text) {
+  // `action` adds a button to the note, e.g. { label: "undo", run }.
+  function notice(text, action = null) {
     el.toast.textContent = text;
+    delete el.toast.dataset.action;
+    if (action) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = action.label;
+      btn.addEventListener("click", () => {
+        el.toast.dataset.show = "false";
+        delete el.toast.dataset.action;
+        action.run();
+      });
+      el.toast.append(btn);
+      el.toast.dataset.action = "";
+    }
     el.toast.dataset.show = "true";
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => {
       el.toast.dataset.show = "false";
+      delete el.toast.dataset.action;
     }, TOAST_MS);
 
     if (
@@ -425,6 +472,8 @@ export function mountFocusTimer(root) {
     state.running = false;
     state.endAt = null;
     state.startedAt = null;
+    state.credited = 0;
+    state.segAt = null;
     stopTicking();
   }
 
@@ -441,12 +490,55 @@ export function mountFocusTimer(root) {
 
   // `ms` is the focus time itself (the session or block length), so time
   // spent paused isn't counted.
-  function logFocus(task, start, end, ms) {
-    const minutes = Math.round(ms / MIN);
-    if (minutes < 1) return;
-    state.log.push({ task: task || "untitled", start, end, minutes });
+  // Returns whether the session counted toward the long break.
+  function logFocus(task, start, end, ms, todoId = state.todoId) {
+    // Part of the session may already be logged to tasks checked off
+    // during it; this logs the rest.
+    const split = state.credited > 0;
+    const from = state.segAt ?? start;
+    const minutes = Math.round((ms - state.credited) / MIN);
+    state.credited = 0;
+    state.segAt = null;
+    if (minutes >= 1) {
+      pushLog({ task: task || "untitled", start: from, end, minutes, todoId });
+    } else if (split) {
+      // Too little left to log: the last part stands for the session.
+      const last = state.log.at(-1);
+      if (last) delete last.part;
+    } else {
+      return false;
+    }
     state.done += 1;
     state.cycleDay = dayKey(end);
+    return true;
+  }
+
+  // Every log entry adds its minutes to its list task.
+  function pushLog(entry) {
+    if (!entry.todoId) delete entry.todoId;
+    state.log.push(entry);
+    const todo = state.todos.find(t => t.id === entry.todoId);
+    if (todo) todo.spentMin += entry.minutes;
+  }
+
+  // Log the focus time so far to the current task, so the rest of the
+  // session can go to another one. A part isn't a session of its own: the
+  // day's dots and the long-break count skip it.
+  function splitSession() {
+    const elapsed = state.setMs - Math.max(0, remainingMs());
+    const minutes = Math.round((elapsed - state.credited) / MIN);
+    if (minutes < 1) return;
+    const now = Date.now();
+    pushLog({
+      task: state.task || "untitled",
+      start: state.segAt ?? state.startedAt ?? now - minutes * MIN,
+      end: now,
+      minutes,
+      todoId: state.todoId,
+      part: true,
+    });
+    state.credited = elapsed;
+    state.segAt = now;
   }
 
   function tryStart() {
@@ -460,7 +552,10 @@ export function mountFocusTimer(root) {
     if (remainingMs() <= 0) return;
     cancelSweep();
     ensureAudio(); // unlock audio during a user gesture
-    if (state.mode === "focus") state.task = el.task.value.trim();
+    if (state.mode === "focus" && state.startedAt == null) {
+      state.task = el.task.value.trim();
+      linkTodo();
+    }
     if (state.startedAt == null) state.startedAt = Date.now();
     state.endAt = Date.now() + state.remaining;
     state.running = true;
@@ -487,18 +582,21 @@ export function mountFocusTimer(root) {
 
   const toggle = () => (state.running ? pause() : tryStart());
 
-  function complete({ quiet = false } = {}) {
-    const end = state.endAt ?? Date.now();
+  // `early`: skipped before its time was up, so only the time spent counts.
+  function complete({ quiet = false, early = false } = {}) {
+    const end = early ? Date.now() : (state.endAt ?? Date.now());
+    const ms = early ? state.setMs - Math.max(0, remainingMs()) : state.setMs;
     let next;
     if (state.mode === "focus") {
-      logFocus(
+      const counted = logFocus(
         state.task,
-        state.startedAt ?? end - state.setMs,
+        state.startedAt ?? end - ms,
         end,
-        state.setMs
+        ms
       );
       el.task.value = "";
-      next = state.done % state.settings.every === 0 ? "long" : "short";
+      next =
+        counted && state.done % state.settings.every === 0 ? "long" : "short";
     } else {
       if (state.breakKind === "long") state.done = 0;
       next = "focus";
@@ -553,7 +651,13 @@ export function mountFocusTimer(root) {
 
     if (now >= plan.end) {
       if (prev?.kind === "focus" && !resume) {
-        logFocus(prev.label, prev.start, prev.end, prev.end - prev.start);
+        logFocus(
+          prev.label,
+          prev.start,
+          prev.end,
+          prev.end - prev.start,
+          prev.todoId ?? null
+        );
       }
       state.plan = null;
       state.planIdx = null;
@@ -578,7 +682,17 @@ export function mountFocusTimer(root) {
 
     const changed = idx !== state.planIdx;
     if (changed && prev?.kind === "focus" && !resume && prev.end <= now) {
-      logFocus(prev.label, prev.start, prev.end, prev.end - prev.start);
+      logFocus(
+        prev.label,
+        prev.start,
+        prev.end,
+        prev.end - prev.start,
+        prev.todoId ?? null
+      );
+    }
+    if (changed) {
+      state.credited = 0;
+      state.segAt = null;
     }
 
     const block = blocks[idx];
@@ -586,6 +700,7 @@ export function mountFocusTimer(root) {
     if (block.kind === "focus") {
       state.mode = "focus";
       state.task = block.label;
+      state.todoId = block.todoId ?? null;
       el.task.value = block.label;
     } else {
       state.mode = "break";
@@ -612,11 +727,20 @@ export function mountFocusTimer(root) {
     const now = Date.now();
     const label = el.task.value.trim() || state.task;
     cancelSweep();
+    if (!inProgress()) {
+      state.task = label;
+      linkTodo();
+    }
     state.plan = {
       start: now,
       end,
       blocks: buildPlan(now, end, state.settings, label),
     };
+    // With a task list, the blocks are named after its tasks.
+    assignTodos(state.plan.blocks, 0, state.todos, {
+      currentId: state.todoId,
+      focusMin: state.settings.focus,
+    });
     state.planIdx = null;
     state.planPaused = false;
     ensureAudio();
@@ -657,6 +781,7 @@ export function mountFocusTimer(root) {
     );
     // Keep finished blocks so the strip still shows the morning so far.
     plan.blocks = [...plan.blocks.filter(b => b.end <= now), ...fresh];
+    relabelPlan();
     state.planIdx = null;
     state.planPaused = false;
     syncPlan({ fromLoad: true });
@@ -664,11 +789,32 @@ export function mountFocusTimer(root) {
 
   // Give the new focus blocks the old ones' labels, in order.
   function carryLabels(oldBlocks, fresh) {
-    const labels = oldBlocks.filter(b => b.kind === "focus").map(b => b.label);
+    const old = oldBlocks.filter(b => b.kind === "focus");
     let i = 0;
     for (const b of fresh) {
-      if (b.kind === "focus") b.label = labels[i++] ?? labels.at(-1) ?? "";
+      if (b.kind !== "focus") continue;
+      const from = old[i++] ?? old.at(-1);
+      b.label = from?.label ?? "";
+      b.todoId = from?.todoId ?? null;
+      if (from?.manual) b.manual = true;
     }
+  }
+
+  // Re-name the plan's upcoming focus blocks after the task list.
+  function relabelPlan() {
+    const plan = state.plan;
+    if (!plan) return;
+    const idx = blockAt(plan.blocks, Date.now());
+    if (idx < 0) return;
+    const cur = plan.blocks[idx];
+    assignTodos(plan.blocks, idx + 1, state.todos, {
+      currentId: state.todoId,
+      focusMin: state.settings.focus,
+      currentInBlock:
+        cur.kind === "focus" &&
+        state.todoId != null &&
+        cur.todoId === state.todoId,
+    });
   }
 
   // New settings mid-plan: rebuild from the start of the current block, so
@@ -694,6 +840,7 @@ export function mountFocusTimer(root) {
     carryLabels(plan.blocks.slice(idx), fresh);
     fresh[0].id = cur.id;
     plan.blocks = [...kept, ...fresh];
+    relabelPlan();
 
     const block = fresh[0];
     // A paused plan keeps its frozen countdown, moved by the same amount.
@@ -897,6 +1044,571 @@ export function mountFocusTimer(root) {
     });
   }
 
+  // ---- Tasks -------------------------------------------------------------
+
+  // Tie the session to the open task with the same name, if there is one.
+  function linkTodo() {
+    state.todoId =
+      openTodos(state.todos).find(t => t.text === state.task)?.id ?? null;
+  }
+
+  // The task the list marks as "now": the session's, or before one starts,
+  // the one named in the task line.
+  function currentTodoId() {
+    if (state.mode === "focus" && !inProgress()) {
+      const text = el.task.value.trim();
+      return openTodos(state.todos).find(t => t.text === text)?.id ?? null;
+    }
+    return state.todoId;
+  }
+
+  // Point the current plan block at a task (or at nothing).
+  function setCurrentBlock(todo) {
+    const block = state.plan?.blocks[state.planIdx];
+    if (block?.kind !== "focus") return;
+    block.label = todo?.text ?? "";
+    block.todoId = todo?.id ?? null;
+    delete block.manual;
+  }
+
+  function selectTodo(todo) {
+    if (state.mode === "focus" && inProgress()) {
+      if (todo.id === state.todoId) return;
+      // Mid-session: the time so far stays with the old task.
+      splitSession();
+      state.task = todo.text;
+      state.todoId = todo.id;
+      el.task.value = todo.text;
+      setCurrentBlock(todo);
+      notice(`now: ${todo.text}`);
+    } else if (state.mode === "break") {
+      state.task = todo.text;
+      state.todoId = todo.id;
+      notice(`next up: ${todo.text}`);
+    } else {
+      state.task = todo.text;
+      state.todoId = todo.id;
+      el.task.value = todo.text;
+      closePanels();
+    }
+    relabelPlan();
+    save();
+    render();
+  }
+
+  function toggleDone(todo) {
+    if (todo.doneAt) {
+      todo.doneAt = null;
+      relabelPlan();
+      save();
+      render();
+      return;
+    }
+    const focusing = state.mode === "focus" && inProgress();
+    const isCurrent = todo.id === currentTodoId();
+    if (isCurrent && focusing) splitSession();
+    todo.doneAt = Date.now();
+    let text = `✓ ${todo.text}`;
+    if (isCurrent) {
+      // Move on to the next task, in the same session if one is running.
+      const next = openTodos(state.todos)[0] ?? null;
+      state.todoId = next?.id ?? null;
+      state.task = next?.text ?? "";
+      if (state.mode === "focus") el.task.value = state.task;
+      if (focusing) {
+        setCurrentBlock(next);
+        text += next
+          ? ` ✿ now: ${next.text}`
+          : " ✿ list's clear: skip to a break, or name what's next";
+      } else if (next) {
+        text += ` ✿ next up: ${next.text}`;
+      }
+    }
+    relabelPlan();
+    save();
+    render();
+    notice(text);
+  }
+
+  // Drop a task's links to the session and the plan.
+  function forgetTodo(todo) {
+    if (state.todoId === todo.id) state.todoId = null;
+    for (const b of state.plan?.blocks ?? []) {
+      if (b.todoId === todo.id) b.todoId = null;
+    }
+  }
+
+  function removeTodo(todo) {
+    state.todos = state.todos.filter(t => t !== todo);
+    forgetTodo(todo);
+    relabelPlan();
+    save();
+    render();
+  }
+
+  function renameTodo(todo, text) {
+    const before = todo.text;
+    todo.text = text;
+    if (state.todoId === todo.id) state.task = text;
+    if (
+      state.mode === "focus" &&
+      (state.todoId === todo.id || el.task.value.trim() === before)
+    ) {
+      el.task.value = text;
+    }
+    for (const b of state.plan?.blocks ?? []) {
+      if (b.todoId === todo.id) b.label = text;
+    }
+  }
+
+  // ---- Tasks panel: a notepad of lines ----------------------------------
+  //
+  // Each open task is a line you can type in. Edits stay in the panel and
+  // are saved when it closes (or before a checkbox, remove or "work on
+  // this" acts on a line), so typing never fights a re-render.
+
+  const tasksOpen = () => el.panels.tasks.panel.dataset.open === "true";
+  const lineText = li => li.querySelector(".ft-todo-text");
+  const lineEst = li => li.querySelector(".ft-todo-est input");
+
+  function sessionsWord(spent) {
+    return ["½", "1"].includes(spent) ? "session" : "sessions";
+  }
+
+  function lineRow(
+    todo,
+    { text = todo?.text ?? "", est = todo?.est ?? 1 } = {}
+  ) {
+    const li = document.createElement("li");
+    li.className = "ft-todo";
+    if (todo) li.dataset.id = todo.id;
+
+    const check = document.createElement("input");
+    check.type = "checkbox";
+    check.className = "ft-todo-check";
+    check.setAttribute("aria-label", "Done");
+
+    const main = document.createElement("div");
+    main.className = "ft-todo-main";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "ft-todo-text";
+    input.maxLength = 60;
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    input.value = text;
+    input.placeholder = "type or paste a task…";
+    input.setAttribute("aria-label", "Task");
+    const meta = document.createElement("small");
+    meta.className = "ft-todo-meta";
+    const metaText = document.createElement("span");
+    const work = document.createElement("button");
+    work.type = "button";
+    work.className = "ft-todo-work";
+    work.textContent = "work on this";
+    meta.append(metaText, work);
+    main.append(input, meta);
+
+    const estWrap = document.createElement("label");
+    estWrap.className = "ft-todo-est";
+    const estInput = document.createElement("input");
+    estInput.type = "number";
+    estInput.inputMode = "numeric";
+    estInput.min = "1";
+    estInput.max = "20";
+    estInput.value = String(est);
+    estInput.setAttribute("aria-label", "Estimated sessions");
+    const fruit = document.createElement("span");
+    fruit.textContent = "🍅";
+    fruit.setAttribute("aria-hidden", "true");
+    estWrap.append(estInput, fruit);
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "ft-todo-remove";
+    remove.textContent = "×";
+    remove.setAttribute("aria-label", "Remove");
+
+    li.append(check, main, estWrap, remove);
+    markBlank(li);
+    return li;
+  }
+
+  // A line with nothing in it yet shows only its text field.
+  function markBlank(li) {
+    li.classList.toggle(
+      "is-blank",
+      !li.dataset.id && !lineText(li).value.trim()
+    );
+  }
+
+  // There's always an empty line at the end to type into.
+  function ensureBlank() {
+    const last = el.todoList.lastElementChild;
+    if (!last || !last.classList.contains("is-blank")) {
+      el.todoList.append(lineRow(null));
+    }
+  }
+
+  function doneRow(todo) {
+    const li = document.createElement("li");
+    li.className = "ft-todo is-done";
+    const check = document.createElement("input");
+    check.type = "checkbox";
+    check.checked = true;
+    check.setAttribute("aria-label", `Mark ${todo.text} not done`);
+    check.addEventListener("change", () => {
+      commitDraft();
+      toggleDone(todo);
+      renderTodos(true);
+    });
+    const main = document.createElement("div");
+    main.className = "ft-todo-main";
+    const name = document.createElement("span");
+    name.className = "ft-todo-name";
+    name.textContent = todo.text;
+    name.title = todo.text;
+    const meta = document.createElement("small");
+    meta.className = "ft-todo-meta";
+    const spent = fmtSessions(sessionsSpent(todo, state.settings.focus));
+    meta.textContent = `${fmtTime(todo.doneAt)} · ${spent} ${sessionsWord(spent)}`;
+    main.append(name, meta);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "ft-todo-remove";
+    remove.textContent = "×";
+    remove.setAttribute("aria-label", `Remove ${todo.text}`);
+    remove.addEventListener("click", () => {
+      commitDraft();
+      removeTodo(todo);
+      renderTodos(true);
+    });
+    li.append(check, main, remove);
+    return li;
+  }
+
+  // Progress, "now" and labels for the saved lines, without touching what
+  // you've typed.
+  function updateLines() {
+    const currentId = currentTodoId();
+    for (const li of el.todoList.children) {
+      const todo = state.todos.find(t => t.id === li.dataset.id);
+      const current = todo != null && todo.id === currentId;
+      li.setAttribute("aria-current", String(current));
+      const [metaText, work] = li.querySelector(".ft-todo-meta").children;
+      if (!todo) {
+        metaText.textContent = "";
+        work.hidden = true;
+        continue;
+      }
+      const spent = fmtSessions(sessionsSpent(todo, state.settings.focus));
+      metaText.textContent = `${current ? "now · " : ""}${spent} of ${todo.est}`;
+      work.hidden = current;
+      const name = lineText(li).value.trim() || todo.text;
+      li.querySelector(".ft-todo-check").setAttribute(
+        "aria-label",
+        `Mark ${name} done`
+      );
+      li.querySelector(".ft-todo-remove").setAttribute(
+        "aria-label",
+        `Remove ${name}`
+      );
+      work.setAttribute("aria-label", `Work on ${name}`);
+    }
+  }
+
+  // Save the panel's lines: new lines become tasks, edited ones are renamed
+  // or re-estimated, emptied ones are removed, and the order is kept. A
+  // trailing "x2" on a line sets its estimate.
+  function commitDraft() {
+    const byId = new Map(state.todos.map(t => [t.id, t]));
+    const before = openTodos(state.todos);
+    const open = [];
+    let changed = false;
+    for (const li of [...el.todoList.children]) {
+      const parsed = parseTaskLine(lineText(li).value);
+      const old = byId.get(li.dataset.id);
+      if (!parsed) {
+        if (old) changed = true;
+        continue;
+      }
+      const est = clampEst(parsed.est ?? lineEst(li).value);
+      let todo = old;
+      if (todo && !todo.doneAt) {
+        if (todo.text !== parsed.text) {
+          renameTodo(todo, parsed.text);
+          changed = true;
+        }
+        if (todo.est !== est) {
+          todo.est = est;
+          changed = true;
+        }
+      } else {
+        todo = { ...makeTodo(parsed.text), est };
+        li.dataset.id = todo.id;
+        changed = true;
+      }
+      open.push(todo);
+      lineText(li).value = todo.text;
+      lineEst(li).value = String(todo.est);
+      markBlank(li);
+    }
+    const dropped = before.filter(t => !open.includes(t));
+    for (const t of dropped) forgetTodo(t);
+    if (
+      !changed &&
+      !dropped.length &&
+      open.map(t => t.id).join() === before.map(t => t.id).join()
+    ) {
+      return;
+    }
+    state.todos = [...open, ...state.todos.filter(t => t.doneAt)];
+    relabelPlan();
+    save();
+    render();
+  }
+
+  // Save the lines, then act on the task this line now stands for.
+  function lineAction(li, fn) {
+    commitDraft();
+    const todo = state.todos.find(t => t.id === li.dataset.id);
+    if (todo) fn(todo);
+    if (tasksOpen()) renderTodos(true);
+  }
+
+  function focusLine(li, at = "end") {
+    const input = lineText(li);
+    input.focus({ preventScroll: false });
+    const pos = at === "end" ? input.value.length : 0;
+    input.setSelectionRange(pos, pos);
+  }
+
+  el.todoList.addEventListener("input", e => {
+    const li = e.target.closest(".ft-todo");
+    if (!li || !e.target.classList.contains("ft-todo-text")) return;
+    markBlank(li);
+    ensureBlank();
+  });
+
+  el.todoList.addEventListener("keydown", e => {
+    const input = e.target;
+    if (!input.classList?.contains("ft-todo-text")) return;
+    const li = input.closest(".ft-todo");
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (!input.value.trim()) return;
+      // Like a notepad: Enter breaks the line at the caret.
+      const pos = input.selectionStart ?? input.value.length;
+      const after = input.value.slice(input.selectionEnd ?? pos);
+      input.value = input.value.slice(0, pos);
+      markBlank(li);
+      const next = li.nextElementSibling;
+      if (!after && next && !lineText(next).value) {
+        focusLine(next, "start");
+        return;
+      }
+      const row = lineRow(null, { text: after });
+      li.after(row);
+      ensureBlank();
+      focusLine(row, "start");
+    } else if (e.key === "Backspace" && !input.value) {
+      const prev = li.previousElementSibling;
+      if (!prev) return;
+      e.preventDefault();
+      // The trailing empty line stays; any other empty line goes.
+      if (li.nextElementSibling) li.remove();
+      focusLine(prev);
+    } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      const to =
+        e.key === "ArrowUp" ? li.previousElementSibling : li.nextElementSibling;
+      if (!to) return;
+      e.preventDefault();
+      focusLine(to);
+    }
+  });
+
+  // Pasting several lines makes a line for each.
+  el.todoList.addEventListener("paste", e => {
+    const input = e.target;
+    if (!input.classList?.contains("ft-todo-text")) return;
+    const text = e.clipboardData?.getData("text") ?? "";
+    if (!text.trim().includes("\n")) return;
+    e.preventDefault();
+    const items = parseTaskLines(text);
+    if (!items.length) return;
+    const li = input.closest(".ft-todo");
+    const pos = input.selectionStart ?? input.value.length;
+    const head = input.value.slice(0, pos);
+    const tail = input.value.slice(input.selectionEnd ?? pos);
+    const [first, ...rest] = items;
+    input.value = `${head}${first.text}${tail}`.slice(0, 60);
+    if (!head.trim() && !tail.trim() && first.est) {
+      lineEst(li).value = String(first.est);
+    }
+    markBlank(li);
+    let prev = li;
+    for (const item of rest) {
+      const row = lineRow(null, { text: item.text, est: item.est ?? 1 });
+      prev.after(row);
+      prev = row;
+    }
+    ensureBlank();
+    focusLine(prev);
+  });
+
+  el.todoList.addEventListener("change", e => {
+    if (!e.target.classList?.contains("ft-todo-check")) return;
+    const li = e.target.closest(".ft-todo");
+    lineAction(li, toggleDone);
+  });
+
+  el.todoList.addEventListener("click", e => {
+    const btn = e.target.closest?.("button");
+    if (!btn) return;
+    const li = btn.closest(".ft-todo");
+    if (btn.classList.contains("ft-todo-remove")) {
+      if (li.dataset.id) {
+        lineAction(li, removeTodo);
+      } else {
+        const next = li.nextElementSibling;
+        li.remove();
+        if (next) focusLine(next);
+      }
+    } else if (btn.classList.contains("ft-todo-work")) {
+      lineAction(li, selectTodo);
+    }
+  });
+
+  // Don't lose lines typed in an open panel when the page goes away.
+  window.addEventListener("pagehide", () => {
+    if (tasksOpen()) commitDraft();
+  });
+
+  function renderTodos(force = false) {
+    const today = dayKey(Date.now());
+    const doneToday = state.todos
+      .filter(t => t.doneAt && dayKey(t.doneAt) === today)
+      .sort((a, b) => a.doneAt - b.doneAt);
+    el.todoDone.replaceChildren(...doneToday.map(doneRow));
+    el.todoDoneWrap.hidden = doneToday.length === 0;
+    // While the panel is open the lines are yours: only refresh their notes.
+    if (tasksOpen() && !force) {
+      updateLines();
+      return;
+    }
+    const active = document.activeElement;
+    const activeLi = el.todoList.contains(active)
+      ? active.closest(".ft-todo")
+      : null;
+    const keep = activeLi && {
+      id: activeLi.dataset.id,
+      index: [...el.todoList.children].indexOf(activeLi),
+      cls: active.className,
+    };
+    el.todoList.replaceChildren(...openTodos(state.todos).map(t => lineRow(t)));
+    ensureBlank();
+    updateLines();
+    if (keep) {
+      const rows = [...el.todoList.children];
+      const li =
+        rows.find(r => keep.id && r.dataset.id === keep.id) ??
+        rows[Math.min(keep.index, rows.length - 1)];
+      const target =
+        (keep.cls && li?.querySelector(`.${keep.cls.split(" ")[0]}`)) ??
+        lineText(li);
+      target?.focus({ preventScroll: true });
+    }
+  }
+
+  // ---- Skip --------------------------------------------------------------
+
+  const skipBtn = document.createElement("button");
+  skipBtn.type = "button";
+  skipBtn.className = "ft-skip";
+  skipBtn.addEventListener("click", skip);
+
+  function skipLabel() {
+    const cur = state.plan?.blocks[blockAt(state.plan.blocks, Date.now())];
+    const kind = cur?.kind ?? (state.mode === "focus" ? "focus" : "break");
+    if (kind === "wrap") return "end plan now";
+    return kind === "focus" ? "skip to break →" : "skip break →";
+  }
+
+  // Jump to the next block now: cut a break short, or take the break early.
+  // Undo puts everything back as it was.
+  function skip() {
+    const snapshot = JSON.stringify(state);
+    const undo = { label: "undo", run: () => restore(snapshot) };
+    cancelSweep();
+    closeEditor();
+    if (state.plan) {
+      skipPlanBlock(undo);
+      return;
+    }
+    complete({ quiet: true, early: true });
+    tryStart();
+    notice(phaseNotice(tabKey(), state.task), undo);
+  }
+
+  function skipPlanBlock(undo) {
+    const plan = state.plan;
+    const now = Date.now();
+    const idx = blockAt(plan.blocks, now);
+    if (idx < 0) return;
+    const cur = plan.blocks[idx];
+    if (cur.kind === "wrap" || plan.end - now < MIN) {
+      clearPlan();
+      notice("plan finished early ✿ nice work", undo);
+      return;
+    }
+    // The block ends now; the rest of the plan is rebuilt from here.
+    // A block skipped the moment it began leaves nothing behind.
+    const keepCut = now - cur.start >= 1000;
+    const kept = plan.blocks.slice(0, idx);
+    if (keepCut) kept.push({ ...cur, end: now });
+    const focusDone =
+      plan.blocks.slice(0, idx).filter(b => b.kind === "focus").length +
+      (cur.kind === "focus" ? 1 : 0);
+    const fresh = buildPlan(now, plan.end, state.settings, "", {
+      focusDone,
+      breakFirst:
+        cur.kind === "focus"
+          ? focusDone % state.settings.every === 0
+            ? "long"
+            : "short"
+          : null,
+    });
+    carryLabels(plan.blocks.slice(idx + 1), fresh);
+    plan.blocks = [...kept, ...fresh];
+    state.planIdx = keepCut ? idx : null;
+    state.planPaused = false;
+    // Logs the cut-short focus block and moves on to the next one.
+    syncPlan({ fromLoad: true });
+    relabelPlan();
+    const block = state.plan?.blocks[state.planIdx];
+    if (block?.kind === "focus") {
+      state.task = block.label;
+      state.todoId = block.todoId ?? null;
+      el.task.value = block.label;
+    }
+    save();
+    render();
+    if (block) {
+      notice(phaseNotice(block.kind, block.label), undo);
+      animateWedge(0, block.end - now, SWEEP_PHASE_MS);
+    }
+  }
+
+  function restore(snapshot) {
+    cancelSweep();
+    Object.assign(state, JSON.parse(snapshot));
+    el.task.value = state.mode === "focus" ? state.task : "";
+    if (state.running || state.plan) startTicking();
+    else stopTicking();
+    save();
+    render();
+  }
+
   // ---- Panels (settings, plan) -------------------------------------------
 
   function openPanel(name) {
@@ -924,6 +1636,9 @@ export function mountFocusTimer(root) {
       planPreview();
       el.planClear.hidden = !state.plan;
       el.planEnd.focus({ preventScroll: true });
+    } else if (name === "tasks") {
+      renderTodos(true);
+      focusLine(el.todoList.lastElementChild);
     } else if (name === "fruit") {
       const current = el.fruits.find(b => b.dataset.ftFruit === state.fruit);
       current?.focus({ preventScroll: true });
@@ -933,6 +1648,8 @@ export function mountFocusTimer(root) {
   }
 
   function closePanels({ returnFocus = false } = {}) {
+    // Lines typed in the tasks panel are saved as it closes.
+    if (tasksOpen()) commitDraft();
     for (const { btn, panel } of Object.values(el.panels)) {
       if (panel.dataset.open !== "true") continue;
       panel.dataset.open = "false";
@@ -1097,9 +1814,14 @@ export function mountFocusTimer(root) {
     const block = state.plan.blocks.find(b => b.id === editingId);
     if (block) {
       block.label = el.editorInput.value.trim();
+      const todo = openTodos(state.todos).find(t => t.text === block.label);
+      block.todoId = todo?.id ?? null;
+      // Named by hand: the task list leaves it alone from now on.
+      block.manual = true;
       const idx = state.plan.blocks.indexOf(block);
       if (idx === state.planIdx) {
         state.task = block.label;
+        state.todoId = block.todoId;
         el.task.value = block.label;
       }
     }
@@ -1124,7 +1846,7 @@ export function mountFocusTimer(root) {
   // Press feedback (a small scale) is set on pointer presses only, so
   // keyboard activation stays instant.
   const PRESSABLE =
-    "[data-ft='hub'], .ft-recent button, .ft-plan-quick button, .ft-plan-go, .ft-fruit-grid button";
+    "[data-ft='hub'], .ft-recent .ft-chip, .ft-plan-quick button, .ft-plan-go, .ft-fruit-grid button";
   root.addEventListener("pointerdown", e => {
     const target = e.target.closest(PRESSABLE);
     if (target) target.dataset.pressed = "";
@@ -1196,6 +1918,7 @@ export function mountFocusTimer(root) {
 
   el.task.addEventListener("input", () => {
     renderRecent();
+    if (!inProgress()) renderTodos();
     mini.update(miniView());
   });
   // Renaming mid-session: the task line stays editable while a focus
@@ -1212,8 +1935,14 @@ export function mountFocusTimer(root) {
     }
     state.task = name;
     el.task.value = name;
+    linkTodo();
     const block = state.plan?.blocks[state.planIdx];
-    if (block?.kind === "focus") block.label = name;
+    if (block?.kind === "focus") {
+      block.label = name;
+      block.todoId = state.todoId;
+      block.manual = !state.todoId;
+    }
+    relabelPlan();
     save();
     render();
   }
@@ -1395,11 +2124,13 @@ export function mountFocusTimer(root) {
     const sessions = state.log.filter(s => dayKey(s.end) === today);
     el.todayWrap.hidden = sessions.length === 0;
     el.dots.replaceChildren(
-      ...sessions.map(s => {
-        const dot = document.createElement("i");
-        dot.title = `${s.task} · ${s.minutes} min · ${fmtTime(s.start)}`;
-        return dot;
-      })
+      ...sessions
+        .filter(s => !s.part)
+        .map(s => {
+          const dot = document.createElement("i");
+          dot.title = `${s.task} · ${s.minutes} min · ${fmtTime(s.start)}`;
+          return dot;
+        })
     );
     const minutes = sessions.reduce((sum, s) => sum + s.minutes, 0);
     el.total.textContent = sessions.length
@@ -1407,7 +2138,7 @@ export function mountFocusTimer(root) {
       : "";
     el.todayWrap.setAttribute(
       "aria-label",
-      `Today: ${sessions.length} focus sessions, ${minutes} minutes`
+      `Today: ${sessions.filter(s => !s.part).length} focus sessions, ${minutes} minutes`
     );
     renderRecent();
   }
@@ -1420,25 +2151,39 @@ export function mountFocusTimer(root) {
       !inProgress() &&
       !state.plan &&
       !el.task.value.trim();
-    const recent = show
-      ? [...new Set(state.log.map(s => s.task).reverse())]
-          .filter(task => task !== "untitled")
-          .slice(0, 3)
-      : [];
+    // The next tasks on the list, or without a list, recent ones.
+    const open = openTodos(state.todos).map(t => t.text);
+    const recent = !show
+      ? []
+      : open.length
+        ? open.slice(0, 3)
+        : [...new Set(state.log.map(s => s.task).reverse())]
+            .filter(task => task !== "untitled")
+            .slice(0, 3);
+    el.recent.setAttribute(
+      "aria-label",
+      open.length ? "Tasks" : "Recent tasks"
+    );
     el.recent.replaceChildren(
       ...recent.map(task => {
         const chip = document.createElement("button");
         chip.type = "button";
+        chip.className = "ft-chip";
         chip.textContent = task;
         chip.title = task;
         chip.addEventListener("click", () => {
           el.task.value = task;
           el.task.focus();
           renderRecent();
+          renderTodos();
         });
         return chip;
       })
     );
+    if (inProgress() || state.plan) {
+      skipBtn.textContent = skipLabel();
+      el.recent.append(skipBtn);
+    }
   }
 
   function render() {
@@ -1514,6 +2259,7 @@ export function mountFocusTimer(root) {
     renderClock();
     setGlow(true);
     renderToday();
+    renderTodos();
   }
 
   // ---- Start up ----------------------------------------------------------
